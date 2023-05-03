@@ -85,6 +85,12 @@ enum Command {
         /// Don't use yubikey for private key operations.
         #[clap(long, env)]
         no_yubi: bool,
+
+        /// Root directory for CA state. If provided the tool will chdir to
+        /// this directory before executing openssl commands. This is
+        /// intended to support openssl.cnf files that use relative paths.
+        #[clap(long, env)]
+        ca_root: Option<PathBuf>,
     },
     /// Send a 'Ping' message to the system being manufactured.
     Ping,
@@ -138,6 +144,12 @@ enum Command {
         /// Don't use yubikey for private key operations.
         #[clap(long, env)]
         no_yubi: bool,
+
+        /// Root directory for CA state. If provided the tool will chdir to
+        /// this directory before executing openssl commands. This is
+        /// intended to support openssl.cnf files that use relative paths.
+        #[clap(long, env)]
+        ca_root: Option<PathBuf>,
     },
 }
 
@@ -178,6 +190,7 @@ fn main() -> Result<()> {
             platform_id,
             intermediate_cert,
             no_yubi,
+            ca_root,
         } => {
             let mut port = dice_mfg::open_serial(&args.serial_dev, args.baud)?;
             dice_mfg::do_manufacture(
@@ -190,6 +203,7 @@ fn main() -> Result<()> {
                 platform_id,
                 intermediate_cert,
                 no_yubi,
+                ca_root.as_ref(),
             )
         }
         Command::Ping => {
@@ -216,6 +230,7 @@ fn main() -> Result<()> {
             engine_section,
             csr_in,
             no_yubi,
+            ca_root,
         } => dice_mfg::do_sign_cert(
             &cert_out,
             &openssl_cnf,
@@ -224,6 +239,7 @@ fn main() -> Result<()> {
             engine_section,
             &csr_in,
             no_yubi,
+            ca_root.as_ref(),
         ),
     }
 }

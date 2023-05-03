@@ -2,11 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+#![feature(absolute_path)]
+
 use dice_mfg_msgs::{MfgMessage, PlatformId, PlatformIdError, SizedBlob};
 use log::{info, warn};
 
 use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 use std::{
+    env,
     fmt,
     fs::{self, File},
     io::{self, Write},
@@ -75,6 +78,7 @@ pub fn do_manufacture(
     platform_id: PlatformId,
     intermediate_cert: PathBuf,
     no_yubi: bool,
+    ca_root: Option<&PathBuf>,
 ) -> Result<()> {
     do_liveness(port, ping_retry)?;
     do_set_platform_id(port, platform_id)?;
@@ -92,6 +96,7 @@ pub fn do_manufacture(
         engine_section,
         &csr.unwrap(),
         no_yubi,
+        ca_root,
     )?;
     do_set_device_id(port, &cert)?;
     do_set_intermediate(port, &intermediate_cert)?;
@@ -230,6 +235,7 @@ pub fn do_sign_cert(
     engine_section: Option<String>,
     csr_in: &PathBuf,
     no_yubi: bool,
+    ca_root: Option<&PathBuf>,
 ) -> Result<()> {
     // this is kinda ugly. Remove the 'no-yubi' trap door?
     let engine_section = if !no_yubi && engine_section.is_none() {
@@ -246,6 +252,7 @@ pub fn do_sign_cert(
         ca_section,
         v3_section,
         engine_section,
+        ca_root,
     ) {
         Ok(_) => {
             println!("success");
@@ -273,7 +280,30 @@ pub fn sign_cert(
     ca_section: Option<String>,
     v3_section: Option<String>,
     engine_section: Option<String>,
+    ca_root: Option<&PathBuf>,
 ) -> Result<()> {
+    // canonicalize openssl_cnf
+    // we don't do this to csr_in or cert_out because they're absolute
+    // this is a lie, csr_in may or may not be absolute
+    info!("canonicalizing paths");
+    let openssl_cnf = fs::canonicalize(openssl_cnf)?;
+    let csr_in = fs::canonicalize(csr_in)?;
+
+    // We can't use fs::canonicalize w/ cert_out because the file does not
+    // yet exist. Use an unstable API instead.
+    let cert_out = std::path::absolute(cert_out)?;
+
+    let oldpwd = match ca_root {
+        Some(p) => {
+            let tmppwd = env::current_dir()?;
+            info!("old pwd: {}", tmppwd.display());
+            info!("setting pwd to: {}", p.display());
+            env::set_current_dir(p.as_path())?;
+            Some(tmppwd)
+        },
+        None => None,
+    };
+
     let mut cmd = Command::new("openssl");
 
     cmd.arg("ca")
@@ -303,6 +333,14 @@ pub fn sign_cert(
     info!("cmd: {:?}", cmd);
 
     let output = cmd.output()?;
+
+    match oldpwd {
+        Some(p) => {
+            info!("restoring pwd to: {}", p.display());
+            env::set_current_dir(p)?;
+        },
+        None => (),
+    }
 
     if output.status.success() {
         Ok(())
