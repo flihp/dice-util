@@ -14,7 +14,7 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     path::PathBuf,
-    process::Command,
+    process::{Child, Command, Stdio},
     str,
     time::Duration,
 };
@@ -273,6 +273,24 @@ fn sized_blob_from_pem_path(p: &PathBuf) -> Result<SizedBlob> {
     Ok(SizedBlob::try_from(&cert.contents[..]).expect("cert too big"))
 }
 
+/// Start the yubihsm-connector process.
+/// NOTE: The connector dumps ~10 lines of text for each command.
+/// We can increase verbosity with the `-debug` flag, but the only way
+/// we can dial this down is by sending stderr to /dev/null.
+fn start_connector() -> Result<Child> {
+    info!("starting connector");
+    let child = Command::new("yubihsm-connector")
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()?;
+
+    // Sleep for a second to allow the connector to start before we start
+    // sending commands to it.
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
+    Ok(child)
+}
+
 pub fn sign_cert(
     openssl_cnf: &PathBuf,
     csr_in: &PathBuf,
@@ -303,6 +321,8 @@ pub fn sign_cert(
         },
         None => None,
     };
+
+    let mut connector = start_connector()?;
 
     let mut cmd = Command::new("openssl");
 
@@ -341,6 +361,8 @@ pub fn sign_cert(
         },
         None => (),
     }
+
+    connector.kill()?;
 
     if output.status.success() {
         Ok(())
