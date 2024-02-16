@@ -1004,6 +1004,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 
 [[package]]
+name = "platform-id-certgen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "const-oid",
+ "dice-mfg-msgs",
+ "ed25519-dalek",
+ "env_logger",
+ "log",
+ "x509-cert",
+]
+
+[[package]]
 name = "platforms"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

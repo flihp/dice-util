@@ -5,6 +5,7 @@ members = [
     "dice-cert-tmpl",
     "dice-mfg",
     "dice-mfg-msgs",
+    "platform-id-certgen",
     "yhsm-audit",
     "verifier-cli",
 ]

@@ -1,0 +1,16 @@
+[package]
+name = "platform-id-certgen"
+version = "0.1.0"
+edition = "2021"
+description = "prototype to generate platform identity certs"
+license = "MPL-2.0"
+
+[dependencies]
+anyhow = { workspace = true, features = ["std"] }
+clap.workspace = true
+const-oid = { workspace = true, features = ["db"] }
+dice-mfg-msgs.path = "../dice-mfg-msgs"
+ed25519-dalek = { workspace = true, features = ["std"] }
+env_logger.workspace = true
+log.workspace = true
+x509-cert = { workspace = true, features = ["pem", "std"] }
