@@ -12,5 +12,6 @@ const-oid = { workspace = true, features = ["db"] }
 dice-mfg-msgs.path = "../dice-mfg-msgs"
 ed25519-dalek = { workspace = true, features = ["std"] }
 env_logger.workspace = true
+getrandom.workspace = true
 log.workspace = true
 x509-cert = { workspace = true, features = ["pem", "std"] }

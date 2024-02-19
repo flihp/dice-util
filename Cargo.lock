@@ -1013,6 +1013,7 @@ dependencies = [
  "dice-mfg-msgs",
  "ed25519-dalek",
  "env_logger",
+ "getrandom",
  "log",
  "x509-cert",
 ]

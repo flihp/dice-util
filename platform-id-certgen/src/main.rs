@@ -3,14 +3,19 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use anyhow::{anyhow, Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use const_oid::{
+    db::{
+        rfc4519,
+        rfc5912::{ECDSA_WITH_SHA_384, ID_EC_PUBLIC_KEY, SECP_384_R_1},
+        rfc8410::ID_ED_25519,
+    },
     AssociatedOid,
-    db::{rfc4519, rfc8410::ID_ED_25519},
 };
 use ed25519_dalek::{
     Signature, Verifier, VerifyingKey, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH,
 };
+use getrandom::getrandom;
 use std::{
     fmt::Debug,
     fs::File,
@@ -18,12 +23,18 @@ use std::{
     path::PathBuf,
     str,
 };
-use x509_cert::der::Tagged;
 use x509_cert::{
-    der::{DecodePem, Encode, Tag},
-    request::{CertReq, Version},
-    Certificate,
+    certificate::{self, Certificate},
+    der::{asn1::OctetString, DecodePem, Encode, Tag, Tagged},
+    ext::{pkix::BasicConstraints, Extension},
+    request::{self, CertReq},
+    spki::{AlgorithmIdentifierOwned, ObjectIdentifier},
 };
+
+#[derive(Clone, Debug, ValueEnum)]
+enum Hash {
+    Sha384,
+}
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -32,8 +43,11 @@ struct Args {
     #[clap(long, env)]
     csr: Option<PathBuf>,
 
-    // these are required ... should be positional
-    /// cert for signing key
+    /// Hash function
+    #[clap(value_enum, long, env)]
+    hash: Option<Hash>,
+
+    /// Cert for signing key
     #[clap(env)]
     signer_cert: PathBuf,
 }
@@ -162,20 +176,70 @@ fn check_csr(csr: &CertReq) -> Result<()> {
     // - version field must be 1
     // NOTE: only a single version number is valid so I think the CSR will
     // fail to parse if the version isn't 1 ... but we check anyway
-    if csr.info.version != Version::V1 {
+    if csr.info.version != request::Version::V1 {
         return Err(anyhow!("CSR version is not 1"));
     };
 
     check_subject(csr)?;
 
-    // alternatively we could evaluate the attributes for validity & copy them
-    // like we do the subject
+    // Alternatively we could evaluate the attributes for validity & copy them
+    // like we do the subject. This is what a "normal" CA would do but since
+    // we only care about creating one type of cert we can keep things simple.
     let len = csr.info.attributes.len();
     if len != 0 {
         return Err(anyhow!("Expected CSR to have no extensions, got {}", len));
     }
 
     Ok(())
+}
+
+fn get_sig_alg(
+    signer_cert: &Certificate,
+    hash: Option<Hash>,
+) -> Result<AlgorithmIdentifierOwned> {
+    let signer_key_type = &signer_cert
+        .tbs_certificate
+        .subject_public_key_info
+        .algorithm;
+    match &signer_key_type.oid {
+        &ID_EC_PUBLIC_KEY => {
+            match &signer_key_type.parameters {
+                Some(p) => {
+                    if p.tag() != Tag::ObjectIdentifier {
+                        return Err(anyhow!(
+                            "unexpected tag for ID_EC_PUBLIC_KEY: {:?}",
+                            p.tag()
+                        ));
+                    }
+
+                    let oid: ObjectIdentifier = p.decode_as()?;
+                    if oid != SECP_384_R_1 {
+                        return Err(anyhow!(
+                            "unsupported params for ID_EC_PUBLIC_KEY: {:?}",
+                            oid
+                        ));
+                    }
+                    // from the signer's cert we've determined that the key is a p384 / secp384r1 key
+                    match hash {
+                        // return AlgorithmIdentifier `ecdsa-with-SHA384`
+                        Some(Hash::Sha384) => Ok(AlgorithmIdentifierOwned {
+                            oid: ECDSA_WITH_SHA_384,
+                            parameters: None,
+                        }),
+                        _ => return Err(anyhow!("ECC keys require a hash function for signing but non provided, seek `--help`")),
+                    }
+                }
+                None => {
+                    return Err(anyhow!(
+                        "ID_EC_PUBLIC_KEY missing required params"
+                    ))
+                }
+            }
+        }
+        _ => {
+            todo!("unsupported signing key: {:?}", signer_key_type);
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -193,7 +257,7 @@ fn main() -> Result<()> {
 
     let csr = CertReq::from_pem(buf)?;
 
-    println!("csr: {:?}", csr);
+    println!("csr: {:#?}", csr);
 
     check_csr(&csr)?;
 
@@ -204,14 +268,65 @@ fn main() -> Result<()> {
     let buf = buf;
 
     let signer_cert = Certificate::from_pem(buf)?;
-    println!("signer_cert: {:?}", signer_cert);
+    println!("signer_cert: {:#?}", signer_cert);
 
-    // cert 'issuer' = get from cert for signing key
+    // CREATE CERT
+    // pull data from:
+    // - csr
+    // - issuer cert
+    // - calculate / generate ourselves
+    //
+    // fields:
+    // - signature_algorithm: algorithm used to sign the tbs_certificate value
+    //   this value will depend on the type of the key and the hash algorithm
+    //   used when signing
+
+    // NOTE: gotta do the `signature` last because ... we sign the final
+    // tbsCertificate (serialized as DER)
+    // - signature: sign(tbs_certificate) w/ alg appropriate for the signing key
+    //   this value can be derived from:
+    //   - the spki public key algorithm from the cert for the signing key & a
+    //   selected hash function
+    //   - the private key & a selected hash function
+    //
+    // - tbsCertificate:
+    //   - version: 0x3
+    let version = certificate::Version::V3;
+
+    //   - serial number: random value, ensure uniqueness eventually
+    let mut serial_number = [0u8; 20];
+    getrandom(&mut serial_number)?;
+    // NOTE: ensure leading bit in value is clear (see:
+    // https://rfd.shared.oxide.computer/rfd/0387#_tbscertificate)
+    let serial_number = serial_number;
+
+    //   - signature algorithm
+    //   tbsCertificate.signature and the outher signature_algorithm must be
+    //   equal per 4.1.1.2
+    let sig_alg = get_sig_alg(&signer_cert, args.hash)?;
+    println!("signature / signature_algorithm: {:#?}", sig_alg);
+
+    //   - 'issuer' = get from cert for signing key
     let issuer = signer_cert.tbs_certificate.subject;
-    println!("issuer: {:?}", issuer);
+    println!("issuer: {:#?}", issuer);
 
-    // if cert has a subject public key identifier extension copy it (how?)
-    // else get public key from the signer_cert and hash it manually
+    // cert 'subject' = csr.info.subject
+    let subject = csr.info.subject;
+    println!("subject: {:#}", subject);
+
+    // cert 'subject_public_key_info' (aka spki) = csr.info.public_key
+    let spki = &csr.info.public_key;
+    println!("subject_public_key_info: {:#?}", spki);
+
+    // extensions
+    let mut extensions = Vec::new();
+
+    // X509v3 Authority Key Identifier:
+    //     70:D7:A7:C5:2B:17:1C:0C:82:9F:E7:DC:04:05:3A:2D:F7:36:4E:94
+    // cert 'authority_key_identifier' = subject key identifier from cert for signing key
+    // get the Authority Key Identifier / 2.5.29.35 from the cert for the
+    // signing key
+    // NOTE: we can (and should) generate this same value from the signers public key
     let mut authority_key_identifier = None;
     if let Some(exts) = signer_cert.tbs_certificate.extensions {
         for ext in exts {
@@ -222,47 +337,47 @@ fn main() -> Result<()> {
     }
     // no more mut
     let authority_key_identifier = authority_key_identifier;
-    println!("authority_key_identifier: {:?}", authority_key_identifier);
+    println!("authority_key_identifier: {:#?}", authority_key_identifier);
 
-    //let authority_key_identifier = for ext in signer_cert.tbs_certificate.extensions
+    if let Some(e) = authority_key_identifier {
+        extensions.push(e);
+    } else {
+        return Err(anyhow!("Cert for signing key is missing Authority Key Identifier extension"));
+    }
 
-    // cert 'subject' = csr.info.subject
-    // cert 'subject_public_key_info' (aka spki) = csr.info.public_key
-    // extensions
-    //
-    // X509v3 Subject Key Identifier: 
+    // X509v3 Subject Key Identifier:
     //     73:9C:9D:2E:FE:E2:69:3A:5A:50:AA:A7:27:5A:13:41:0F:88:16:74
     // cert 'subject_key_identifier' = sha1(csr.info.public_key.subject_public_key
-    //
-    // X509v3 Authority Key Identifier: 
-    //     70:D7:A7:C5:2B:17:1C:0C:82:9F:E7:DC:04:05:3A:2D:F7:36:4E:94
-    // cert 'authority_key_identifier' = get from cert for signing key
-    //
+    let csr_pub = csr.info.public_key.subject_public_key;
+
     // X509v3 Basic Constraints: critical
     //     CA:TRUE
-    // let basic = pub struct BasicConstraints {
-    //     ca: true
-    //     path_len_constraint: None,
-    // }
-    // let ext = x509_cert::ext::Extension {
-    //     extn_id: x509_cert::ext::pkix::BasicConstraints::OID,
-    //     critical: true,
-    //     extn_value: x509_cert::der::asn1::OctetString::new(basic.to_der())?,
-    // }
-    //
-    // then add `ext` to a Vec<x509_cert::ext::Extension>
-    //
+    let basic_constraints = BasicConstraints {
+        ca: true,
+        path_len_constraint: None,
+    };
+
+    let ext = Extension {
+        extn_id: BasicConstraints::OID,
+        critical: true,
+        extn_value: OctetString::new(basic_constraints.to_der()?)?,
+    };
+    println!("basic_constraints: {:#?}", basic_constraints);
+    extensions.push(ext);
+
     // X509v3 Key Usage: critical
     //     Certificate Sign, CRL Sign
+
     // X509v3 Certificate Policies: critical
     //     Policy: 1.3.6.1.4.1.57551.1.3
     //     Policy: 2.23.133.5.4.100.6
     //     Policy: 2.23.133.5.4.100.8
     //     Policy: 2.23.133.5.4.100.12
     // policy
-    // cert extensions = manually create
-    //
-    // then set `tbs_cert.extensions to Some(ext)
+
+    // encode tbsCertificate as DER
+    // generate signature over DER encoded tbsCertificate
+    // create final certificate structure
 
     Ok(())
 }
