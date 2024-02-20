@@ -15,20 +15,35 @@ use const_oid::{
 use ed25519_dalek::{
     Signature, Verifier, VerifyingKey, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH,
 };
+use flagset::FlagSet;
 use getrandom::getrandom;
+use sha1::{Digest, Sha1};
 use std::{
     fmt::Debug,
     fs::File,
     io::{self, Read},
     path::PathBuf,
-    str,
+    str::{self, FromStr},
+    time::SystemTime,
 };
 use x509_cert::{
-    certificate::{self, Certificate},
-    der::{asn1::OctetString, DecodePem, Encode, Tag, Tagged},
-    ext::{pkix::BasicConstraints, Extension},
+    certificate,
+    der::{
+        asn1::{GeneralizedTime, OctetString, UtcTime},
+        DateTime, DecodePem, Encode, Tag, Tagged,
+    },
+    ext::{
+        pkix::{
+            certpolicy::PolicyInformation, BasicConstraints,
+            CertificatePolicies, KeyUsage, SubjectKeyIdentifier,
+        },
+        Extension,
+    },
     request::{self, CertReq},
+    serial_number::SerialNumber,
     spki::{AlgorithmIdentifierOwned, ObjectIdentifier},
+    time::Validity,
+    Certificate, TbsCertificate,
 };
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -49,7 +64,7 @@ struct Args {
 
     /// Cert for signing key
     #[clap(env)]
-    signer_cert: PathBuf,
+    issuer_cert: PathBuf,
 }
 
 const COUNTRY: &str = "US";
@@ -194,16 +209,16 @@ fn check_csr(csr: &CertReq) -> Result<()> {
 }
 
 fn get_sig_alg(
-    signer_cert: &Certificate,
+    issuer_cert: &Certificate,
     hash: Option<Hash>,
 ) -> Result<AlgorithmIdentifierOwned> {
-    let signer_key_type = &signer_cert
+    let issuer_key_type = &issuer_cert
         .tbs_certificate
         .subject_public_key_info
         .algorithm;
-    match &signer_key_type.oid {
+    match &issuer_key_type.oid {
         &ID_EC_PUBLIC_KEY => {
-            match &signer_key_type.parameters {
+            match &issuer_key_type.parameters {
                 Some(p) => {
                     if p.tag() != Tag::ObjectIdentifier {
                         return Err(anyhow!(
@@ -237,39 +252,16 @@ fn get_sig_alg(
             }
         }
         _ => {
-            todo!("unsupported signing key: {:?}", signer_key_type);
+            todo!("unsupported signing key: {:?}", issuer_key_type);
         }
     }
 }
 
-fn main() -> Result<()> {
-    let args = Args::parse();
-
-    // if args.csr file not provided use stdin
-    let mut reader: Box<dyn Read> = match args.csr {
-        Some(i) => Box::new(File::open(i)?),
-        None => Box::new(io::stdin()),
-    };
-
-    let mut buf = Vec::new();
-    let _ = reader.read_to_end(&mut buf)?;
-    let buf = buf;
-
-    let csr = CertReq::from_pem(buf)?;
-
-    println!("csr: {:#?}", csr);
-
-    check_csr(&csr)?;
-
-    // read cert
-    let mut cert = File::open(args.signer_cert)?;
-    let mut buf = Vec::new();
-    let _ = cert.read_to_end(&mut buf)?;
-    let buf = buf;
-
-    let signer_cert = Certificate::from_pem(buf)?;
-    println!("signer_cert: {:#?}", signer_cert);
-
+fn tbs_cert_from_csr(
+    csr: &CertReq,
+    issuer_cert: &Certificate,
+    sig_alg: &AlgorithmIdentifierOwned
+) -> Result<TbsCertificate> {
     // CREATE CERT
     // pull data from:
     // - csr
@@ -296,29 +288,48 @@ fn main() -> Result<()> {
     //   - serial number: random value, ensure uniqueness eventually
     let mut serial_number = [0u8; 20];
     getrandom(&mut serial_number)?;
+
     // NOTE: ensure leading bit in value is clear (see:
     // https://rfd.shared.oxide.computer/rfd/0387#_tbscertificate)
-    let serial_number = serial_number;
+    serial_number[0] &= 0b0111_1111;
+    let serial_number = SerialNumber::new(&serial_number)?;
+    println!("serial_number: {:#?}", serial_number);
 
-    //   - signature algorithm
-    //   tbsCertificate.signature and the outher signature_algorithm must be
-    //   equal per 4.1.1.2
-    let sig_alg = get_sig_alg(&signer_cert, args.hash)?;
-    println!("signature / signature_algorithm: {:#?}", sig_alg);
+    // - signature: sign(tbs_certificate) w/ alg appropriate for the signing key
+    //   this value can be derived from:
+    //   - the spki public key algorithm from the cert for the signing key & a
+    //   selected hash function
+    //   - the private key & a selected hash function
+    // got from a parameter
 
     //   - 'issuer' = get from cert for signing key
-    let issuer = signer_cert.tbs_certificate.subject;
+    let issuer = &issuer_cert.tbs_certificate.subject;
     println!("issuer: {:#?}", issuer);
 
-    // cert 'subject' = csr.info.subject
-    let subject = csr.info.subject;
+    // - validity = start: current system time, end: 9999-12-31-
+    let not_before = DateTime::from_system_time(SystemTime::now())?;
+    let not_before = if not_before.year() >= 2050 {
+        GeneralizedTime::from(not_before).into()
+    } else {
+        UtcTime::try_from(not_before)?.into()
+    };
+    let not_after = DateTime::from_str("9999-12-31T23:59:59Z")?;
+    let not_after = GeneralizedTime::from(not_after).into();
+    let validity = Validity {
+        not_before,
+        not_after,
+    };
+    println!("validity: {:#?}", validity);
+
+    // - cert 'subject' = csr.info.subject
+    let subject = &csr.info.subject;
     println!("subject: {:#}", subject);
 
-    // cert 'subject_public_key_info' (aka spki) = csr.info.public_key
+    // - cert 'subject_public_key_info' (aka spki) = csr.info.public_key
     let spki = &csr.info.public_key;
     println!("subject_public_key_info: {:#?}", spki);
 
-    // extensions
+    // - extensions
     let mut extensions = Vec::new();
 
     // X509v3 Authority Key Identifier:
@@ -328,19 +339,18 @@ fn main() -> Result<()> {
     // signing key
     // NOTE: we can (and should) generate this same value from the signers public key
     let mut authority_key_identifier = None;
-    if let Some(exts) = signer_cert.tbs_certificate.extensions {
+    if let Some(exts) = &issuer_cert.tbs_certificate.extensions {
         for ext in exts {
             if ext.extn_id == x509_cert::ext::pkix::SubjectKeyIdentifier::OID {
                 authority_key_identifier = Some(ext)
             }
         }
     }
-    // no more mut
     let authority_key_identifier = authority_key_identifier;
     println!("authority_key_identifier: {:#?}", authority_key_identifier);
 
     if let Some(e) = authority_key_identifier {
-        extensions.push(e);
+        extensions.push(e.clone());
     } else {
         return Err(anyhow!("Cert for signing key is missing Authority Key Identifier extension"));
     }
@@ -348,7 +358,26 @@ fn main() -> Result<()> {
     // X509v3 Subject Key Identifier:
     //     73:9C:9D:2E:FE:E2:69:3A:5A:50:AA:A7:27:5A:13:41:0F:88:16:74
     // cert 'subject_key_identifier' = sha1(csr.info.public_key.subject_public_key
-    let csr_pub = csr.info.public_key.subject_public_key;
+    let csr_pub = &csr
+        .info
+        .public_key
+        .subject_public_key
+        .as_bytes()
+        .ok_or_else(|| anyhow!("CSR has invalid / unaligned public key"))?;
+
+    let mut hasher = Sha1::new();
+    hasher.update(csr_pub);
+    let skid = hasher.finalize();
+
+    // &*skid is some magic to convert a GenericArray<u8, blah ...> to a
+    // Vec<u8> even though .into / .try_into can't
+    let skid = SubjectKeyIdentifier(OctetString::new(&*skid)?);
+    let ext = Extension {
+        extn_id: SubjectKeyIdentifier::OID,
+        critical: true,
+        extn_value: OctetString::new(skid.to_der()?)?,
+    };
+    extensions.push(ext);
 
     // X509v3 Basic Constraints: critical
     //     CA:TRUE
@@ -362,11 +391,24 @@ fn main() -> Result<()> {
         critical: true,
         extn_value: OctetString::new(basic_constraints.to_der()?)?,
     };
-    println!("basic_constraints: {:#?}", basic_constraints);
+    println!("basic_constraints: {:#?}", ext);
     extensions.push(ext);
 
     // X509v3 Key Usage: critical
     //     Certificate Sign, CRL Sign
+    let mut key_usage_flags = FlagSet::default();
+    key_usage_flags |= x509_cert::ext::pkix::KeyUsages::KeyCertSign;
+    key_usage_flags |= x509_cert::ext::pkix::KeyUsages::CRLSign;
+    let der = KeyUsage(key_usage_flags)
+        .to_der()
+        .context("Failed to convert KeyUsage to der")?;
+    let ext = Extension {
+        extn_id: KeyUsage::OID,
+        critical: true,
+        extn_value: OctetString::new(der)?,
+    };
+    println!("key_usage: {:#?}", ext);
+    extensions.push(ext);
 
     // X509v3 Certificate Policies: critical
     //     Policy: 1.3.6.1.4.1.57551.1.3
@@ -374,10 +416,103 @@ fn main() -> Result<()> {
     //     Policy: 2.23.133.5.4.100.8
     //     Policy: 2.23.133.5.4.100.12
     // policy
+    let mut policies = Vec::new();
+    let policy_info = PolicyInformation {
+        policy_identifier: ObjectIdentifier::new("1.3.6.1.4.1.57551.1.3")?,
+        policy_qualifiers: None,
+    };
+    policies.push(policy_info);
 
+    let policy_info = PolicyInformation {
+        policy_identifier: ObjectIdentifier::new("2.23.133.5.4.100.6")?,
+        policy_qualifiers: None,
+    };
+    policies.push(policy_info);
+
+    let policy_info = PolicyInformation {
+        policy_identifier: ObjectIdentifier::new("2.23.133.5.4.100.8")?,
+        policy_qualifiers: None,
+    };
+    policies.push(policy_info);
+
+    let policy_info = PolicyInformation {
+        policy_identifier: ObjectIdentifier::new("2.23.133.5.4.100.12")?,
+        policy_qualifiers: None,
+    };
+    policies.push(policy_info);
+
+    let der = CertificatePolicies(policies)
+        .to_der()
+        .context("Failed to convert CertificatePolicies to DER")?;
+    let ext = Extension {
+        extn_id: CertificatePolicies::OID,
+        critical: true,
+        extn_value: OctetString::new(der)?,
+    };
+    println!("certificate_policies: {:#?}", ext);
+    extensions.push(ext);
+    let extensions = Some(extensions);
+
+    Ok(TbsCertificate {
+        version,
+        serial_number,
+        signature: sig_alg.clone(),
+        issuer: issuer.clone(),
+        validity,
+        subject: subject.clone(),
+        subject_public_key_info: spki.clone(),
+        issuer_unique_id: None,
+        subject_unique_id: None,
+        extensions,
+    })
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    // if args.csr file not provided use stdin
+    let mut reader: Box<dyn Read> = match args.csr {
+        Some(i) => Box::new(File::open(i)?),
+        None => Box::new(io::stdin()),
+    };
+
+    let mut buf = Vec::new();
+    let _ = reader.read_to_end(&mut buf)?;
+    let buf = buf;
+
+    let csr = CertReq::from_pem(buf)?;
+
+    println!("csr: {:#?}", csr);
+
+    check_csr(&csr)?;
+
+    // read cert
+    let mut cert = File::open(args.issuer_cert)?;
+    let mut buf = Vec::new();
+    let _ = cert.read_to_end(&mut buf)?;
+    let buf = buf;
+
+    let issuer_cert = Certificate::from_pem(buf)?;
+    println!("issuer_cert: {:#?}", issuer_cert);
+
+    //AlgorithmIdentifierOwned
+    let sig_alg = get_sig_alg(&issuer_cert, args.hash.clone())?;
+
+    let tbs_certificate = tbs_cert_from_csr(&csr, &issuer_cert, &sig_alg)?;
+
+    println!("tbs_certificate: {:#?}", tbs_certificate);
     // encode tbsCertificate as DER
+    let _der = tbs_certificate.to_der()?;
+
     // generate signature over DER encoded tbsCertificate
+    // let signature = SigningKey.sign(der)?;
+
     // create final certificate structure
+    // let cert = Certificate {
+    //     tbs_certificate,
+    //     signature_algorithm: tbs_certificate.signature.clone(),
+    //     signature,
+    // };
 
     Ok(())
 }
