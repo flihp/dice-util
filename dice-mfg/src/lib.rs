@@ -2,8 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-#![feature(absolute_path)]
-
 use anyhow::{Context, Result};
 use const_oid::ObjectIdentifier;
 use dice_mfg_msgs::{
@@ -542,7 +540,7 @@ impl CertSigner {
         let csr_in = fs::canonicalize(csr_in).with_context(|| {
             format!("failed to canonicalize path to CSR: {}", csr_in.display())
         })?;
-        let cert_out = std::path::absolute(cert_out).with_context(|| {
+        let cert_out = fs::canonicalize(cert_out).with_context(|| {
             format!(
                 "failed to make path to output cert absolute: {}",
                 cert_out.display()

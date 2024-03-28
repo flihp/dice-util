@@ -14,13 +14,13 @@ resolver = "2"
 anyhow = { version = "1", default-features = false }
 attest.path = "attest"
 chrono = { version = "0.4.34", default-features=false }
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4.3.24", features = ["derive", "env"] }
 const-oid = { version = "0.9.6", default-features = false }
 corncobs = "0.1"
 derive_more = "0.99"
 ecdsa = { version = "0.16", default-features = false }
 ed25519-dalek = { version = "2.1", default-features = false }
-env_logger = { version = "0.11", default-features = false }
+env_logger = { version = "0.10.2", default-features = false }
 getrandom = "0.2.12"
 hex.version = "0.4"
 hubpack = "0.1"
