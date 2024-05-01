@@ -246,6 +246,10 @@ impl TryFrom<OpensslCaOptsRaw> for OpensslCaOpts {
 
 #[derive(Clone, Debug, Parser)]
 struct PermslipSigningOpts {
+    /// Identifier for the key in the ssh-agent
+    #[clap(long, env = "DICE_MFG_PERMSLIP_SSHKEY")]
+    ssh_key: Option<String>,
+
     /// The name of the signing key.
     #[clap(env = "DICE_MFG_PERMSLIP_KEY")]
     key_name: String,
@@ -297,12 +301,18 @@ fn generate_cert(
             cert_signer.sign(csr, cert)
         }
         CertificateAuthority::Permslip(cfg) => {
-            let output = Process::new("permslip")
-                .arg("sign")
+            let mut cmd = Process::new("permslip");
+
+            cmd.arg("sign")
                 .arg(cfg.key_name)
                 .arg(csr)
-                .arg("--sshauth")
-                .arg("--batch-approved")
+                .arg("--sshauth");
+
+            if let Some(ssh_key) = cfg.ssh_key {
+                cmd.arg(ssh_key);
+            }
+
+            let output = cmd.arg("--batch-approved")
                 .arg("--out")
                 .arg(cert)
                 .spawn()
@@ -332,11 +342,17 @@ fn get_ca_cert(
         }
         CertificateAuthority::Permslip(cfg) => {
             let output_file = output_dir.join(CA_CERT);
-            let output = Process::new("permslip")
-                .arg("get-cert")
+            let mut cmd = Process::new("permslip");
+
+            cmd.arg("get-cert")
                 .arg(cfg.key_name)
-                .arg("--sshauth")
-                .arg("--out")
+                .arg("--sshauth");
+
+            if let Some(ssh_key) = cfg.ssh_key {
+                cmd.arg(ssh_key);
+            }
+
+            let output = cmd.arg("--out")
                 .arg(&output_file)
                 .spawn()
                 .context("Unable to execute `permslip`, is it in your PATH and executable?")?
