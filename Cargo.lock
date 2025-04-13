@@ -1536,18 +1536,11 @@ dependencies = [
  "anyhow",
  "attest-data",
  "clap",
- "const-oid",
  "dice-verifier",
- "ed25519-dalek",
  "env_logger",
  "hubpack",
  "libipcc",
  "log",
- "p384",
- "pem-rfc7468",
- "serde_json",
- "sha3",
- "tempfile",
  "x509-cert",
 ]
 
