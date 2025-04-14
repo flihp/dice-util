@@ -51,34 +51,11 @@ enum AttestCommand {
         #[clap(env)]
         nonce: PathBuf,
     },
-    /// Get the length in bytes of attestations.
-    AttestLen,
-    /// Get a certificate from the Attest task.
-    Cert {
-        /// Target encoding for certificate.
-        #[clap(long, env, default_value_t = Encoding::Pem)]
-        encoding: Encoding,
-
-        /// Index of certificate in certificate chain.
-        #[clap(env)]
-        index: u32,
-    },
     /// Get the full cert chain from the RoT encoded per RFC 6066 (PKI path)
     CertChain,
-    /// Get the length of the certificate chain that ties the key used by the
-    /// `Attest` task to sign attestations back to some PKI. This chain may be
-    /// self signed or will terminate at the intermediate before the root.
-    CertChainLen,
     /// get the length of the certificate at the provided index.
-    CertLen {
-        /// Index of certificate in certificate chain.
-        #[clap(env)]
-        index: u32,
-    },
     /// Get the log of measurements recorded by the RoT.
     Log,
-    /// Get the length in bytes of the Log.
-    LogLen,
     /// Report a measurement to the `Attest` task for recording in the
     /// measurement log.
     Record {
@@ -532,13 +509,6 @@ fn main() -> Result<()> {
             io::stdout().write_all(attestation.as_bytes())?;
             io::stdout().flush()?;
         }
-        AttestCommand::AttestLen => println!("{}", attest.attest_len()?),
-        AttestCommand::Cert { encoding, index } => {
-            let out = get_cert(&attest, encoding, index)?;
-
-            io::stdout().write_all(&out)?;
-            io::stdout().flush()?;
-        }
         AttestCommand::CertChain => {
             let cert_chain = attest.get_certificates()?;
             for cert in cert_chain {
@@ -548,10 +518,6 @@ fn main() -> Result<()> {
             }
             io::stdout().flush()?;
         }
-        AttestCommand::CertChainLen => println!("{}", attest.cert_chain_len()?),
-        AttestCommand::CertLen { index } => {
-            println!("{}", attest.cert_len(index)?)
-        }
         AttestCommand::Log => {
             let log = attest.get_measurement_log()?;
             let mut log = serde_json::to_string(&log)?;
@@ -560,7 +526,6 @@ fn main() -> Result<()> {
             io::stdout().write_all(log.as_bytes())?;
             io::stdout().flush()?;
         }
-        AttestCommand::LogLen => println!("{}", attest.log_len()?),
         AttestCommand::Record { digest } => {
             let digest = fs::read(digest)?;
             attest.record(&digest)?;
