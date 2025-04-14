@@ -19,7 +19,10 @@ use std::{
     process::{Command, Output},
 };
 use tempfile::NamedTempFile;
-use x509_cert::{der::DecodePem, Certificate, PkiPath};
+use x509_cert::{
+    der::{DecodePem, EncodePem},
+    Certificate, PkiPath,
+};
 
 /// Execute HIF operations exposed by the RoT Attest task.
 #[derive(Debug, Parser)]
@@ -169,6 +172,23 @@ impl fmt::Display for Encoding {
     }
 }
 
+trait Attester {
+    fn get_measurement_log(&self) -> Result<Log>;
+    fn get_certificates(&self) -> Result<PkiPath>;
+    fn attest(&self, nonce: &Nonce) -> Result<Attestation>;
+}
+
+trait AttestRoT {
+    fn attest_len(&self) -> Result<u32>;
+    fn attest(&self, nonce: &Nonce, out: &mut [u8]) -> Result<()>;
+    fn cert_chain_len(&self) -> Result<u32>;
+    fn cert_len(&self, index: u32) -> Result<u32>;
+    fn cert(&self, index: u32, out: &mut [u8]) -> Result<()>;
+    fn log(&self, out: &mut [u8]) -> Result<()>;
+    fn log_len(&self) -> Result<u32>;
+    fn record(&self, data: &[u8]) -> Result<()>;
+}
+
 /// A type to simplify the execution of the HIF operations exposed by the RoT
 /// Attest task.
 struct AttestHiffy {
@@ -286,8 +306,10 @@ impl AttestHiffy {
             ))
         }
     }
+}
 
-    fn attest(&self, nonce: Nonce, out: &mut [u8]) -> Result<()> {
+impl AttestRoT for AttestHiffy {
+    fn attest(&self, nonce: &Nonce, out: &mut [u8]) -> Result<()> {
         let mut attestation_tmp = tempfile::NamedTempFile::new()?;
         let mut nonce_tmp = tempfile::NamedTempFile::new()?;
 
@@ -426,8 +448,43 @@ impl AttestHiffy {
     }
 }
 
+impl Attester for AttestHiffy {
+    fn get_measurement_log(&self) -> Result<Log> {
+        let log_len = self.log_len()?;
+        let mut log = vec![0u8; log_len as usize];
+        self.log(&mut log)?;
+        let (log, _): (Log, _) = hubpack::deserialize(&log)
+            .map_err(|e| anyhow!("Failed to deserialize Log: {}", e))?;
+
+        Ok(log)
+    }
+
+    fn get_certificates(&self) -> Result<PkiPath> {
+        let mut cert_chain = PkiPath::new();
+        for index in 0..self.cert_chain_len()? {
+            let cert = get_cert(self, Encoding::Pem, index)?;
+            let cert = Certificate::from_pem(&cert)?;
+
+            cert_chain.push(cert);
+        }
+
+        Ok(cert_chain)
+    }
+
+    fn attest(&self, nonce: &Nonce) -> Result<Attestation> {
+        let attest_len = self.attest_len()?;
+        let mut out = vec![0u8; attest_len as usize];
+        AttestRoT::attest(self, nonce, &mut out)?;
+
+        let (attestation, _): (Attestation, _) = hubpack::deserialize(&out)
+            .map_err(|e| anyhow!("Failed to deserialize Attestation: {}", e))?;
+
+        Ok(attestation)
+    }
+}
+
 fn get_cert(
-    attest: &AttestHiffy,
+    attest: &dyn AttestRoT,
     encoding: Encoding,
     index: u32,
 ) -> Result<Vec<u8>> {
@@ -465,16 +522,8 @@ fn main() -> Result<()> {
     match args.command {
         AttestCommand::Attest { nonce } => {
             let nonce = fs::read(nonce)?;
-            let nonce = Nonce::try_from(&nonce[..])?;
-            let attest_len = attest.attest_len()?;
-            let mut attestation = vec![0u8; attest_len as usize];
-            attest.attest(nonce, &mut attestation)?;
-
-            // deserialize hubpack encoded attestation
-            let (attestation, _): (Attestation, _) =
-                hubpack::deserialize(&attestation).map_err(|e| {
-                    anyhow!("Failed to deserialize Attestation: {}", e)
-                })?;
+            let nonce = Nonce::try_from(nonce)?;
+            let attestation = Attester::attest(&attest, &nonce)?;
 
             // serialize attestation to json & write to file
             let mut attestation = serde_json::to_string(&attestation)?;
@@ -491,10 +540,11 @@ fn main() -> Result<()> {
             io::stdout().flush()?;
         }
         AttestCommand::CertChain => {
-            for index in 0..attest.cert_chain_len()? {
-                let out = get_cert(&attest, Encoding::Pem, index)?;
+            let cert_chain = attest.get_certificates()?;
+            for cert in cert_chain {
+                let cert = cert.to_pem(LineEnding::default())?;
 
-                io::stdout().write_all(&out)?;
+                io::stdout().write_all(cert.as_bytes())?;
             }
             io::stdout().flush()?;
         }
@@ -503,11 +553,7 @@ fn main() -> Result<()> {
             println!("{}", attest.cert_len(index)?)
         }
         AttestCommand::Log => {
-            let mut log = vec![0u8; attest.log_len()? as usize];
-            attest.log(&mut log)?;
-
-            let (log, _): (Log, _) = hubpack::deserialize(&log)
-                .map_err(|e| anyhow!("Failed to deserialize Log: {}", e))?;
+            let log = attest.get_measurement_log()?;
             let mut log = serde_json::to_string(&log)?;
             log.push('\n');
 
@@ -555,7 +601,7 @@ fn main() -> Result<()> {
 }
 
 fn verify<P: AsRef<Path>>(
-    attest: &AttestHiffy,
+    attest: &dyn Attester,
     ca_cert: &Option<PathBuf>,
     self_signed: bool,
     work_dir: P,
@@ -571,11 +617,7 @@ fn verify<P: AsRef<Path>>(
 
     // get attestation
     info!("getting attestation");
-    let mut attestation = vec![0u8; attest.attest_len()? as usize];
-    attest.attest(nonce, &mut attestation)?;
-    // deserialize hubpack encoded attestation
-    let (attestation, _): (Attestation, _) = hubpack::deserialize(&attestation)
-        .map_err(|e| anyhow!("Failed to deserialize Attestation: {}", e))?;
+    let attestation = attest.attest(&nonce)?;
     // serialize attestation to json & write to file
     let mut attestation = serde_json::to_string(&attestation)?;
     attestation.push('\n');
@@ -585,10 +627,7 @@ fn verify<P: AsRef<Path>>(
 
     // get log
     info!("getting measurement log");
-    let mut log = vec![0u8; attest.log_len()? as usize];
-    attest.log(&mut log)?;
-    let (log, _): (Log, _) = hubpack::deserialize(&log)
-        .map_err(|e| anyhow!("Failed to deserialize Log: {}", e))?;
+    let log = attest.get_measurement_log()?;
     let mut log = serde_json::to_string(&log)?;
     log.push('\n');
     let log_path = work_dir.as_ref().join("log.json");
@@ -600,20 +639,17 @@ fn verify<P: AsRef<Path>>(
     let cert_chain_path = work_dir.as_ref().join("cert-chain.pem");
     let mut cert_chain = File::create(&cert_chain_path)?;
     let alias_cert_path = work_dir.as_ref().join("alias.pem");
-    for index in 0..attest.cert_chain_len()? {
-        let encoding = Encoding::Pem;
-        info!("getting cert[{}] encoded as {}", index, encoding);
-        let cert = get_cert(attest, encoding, index)?;
+    let certs = attest.get_certificates()?;
+    // the first cert in the chain / the leaf cert is the one
+    // used to sign attestations
+    info!("writing alias cert to: {}", alias_cert_path.display());
+    let pem = certs[0].to_pem(LineEnding::default())?;
+    fs::write(&alias_cert_path, pem)?;
 
-        // the first cert in the chain / the leaf cert is the one
-        // used to sign attestations
-        if index == 0 {
-            info!("writing alias cert to: {}", alias_cert_path.display());
-            fs::write(&alias_cert_path, &cert)?;
-        }
-
+    for (index, cert) in certs.iter().enumerate() {
         info!("writing cert[{}] to: {}", index, cert_chain_path.display());
-        cert_chain.write_all(&cert)?;
+        let pem = cert.to_pem(LineEnding::default())?;
+        cert_chain.write_all(pem.as_bytes())?;
     }
 
     verify_attestation(
