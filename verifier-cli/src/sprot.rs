@@ -2,12 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::{Attester, Encoding, Interface};
+use crate::{Attester, Interface};
 use anyhow::{anyhow, Context, Result};
 use attest_data::{Attestation, Log, Nonce};
 use hubpack::SerializedSize;
 use log::{debug, info};
-use pem_rfc7468::{LineEnding, PemLabel};
 use sha3::{Digest, Sha3_256};
 use std::{
     io::{Read, Write},
@@ -15,7 +14,7 @@ use std::{
     process::{Command, Output},
 };
 use tempfile::NamedTempFile;
-use x509_cert::{der::DecodePem, Certificate, PkiPath};
+use x509_cert::{der::Decode, Certificate, PkiPath};
 
 pub trait AttestRot {
     fn attest_len(&self) -> Result<u32>;
@@ -301,8 +300,11 @@ impl Attester for AttestHiffy {
     fn get_certificates(&self) -> Result<PkiPath> {
         let mut cert_chain = PkiPath::new();
         for index in 0..self.cert_chain_len()? {
-            let cert = get_cert(self, Encoding::Pem, index)?;
-            let cert = Certificate::from_pem(&cert)?;
+            let cert_len = self.cert_len(index)?;
+            let mut cert = vec![0u8; cert_len as usize];
+            self.cert(index, &mut cert)?;
+
+            let cert = Certificate::from_der(&cert)?;
 
             cert_chain.push(cert);
         }
@@ -320,26 +322,4 @@ impl Attester for AttestHiffy {
 
         Ok(attestation)
     }
-}
-
-fn get_cert(
-    attest: &dyn AttestRot,
-    encoding: Encoding,
-    index: u32,
-) -> Result<Vec<u8>> {
-    let cert_len = attest.cert_len(index)?;
-    let mut out = vec![0u8; cert_len as usize];
-    attest.cert(index, &mut out)?;
-
-    Ok(match encoding {
-        Encoding::Der => out,
-        Encoding::Pem => {
-            let pem = pem_rfc7468::encode_string(
-                Certificate::PEM_LABEL,
-                LineEnding::default(),
-                &out,
-            )?;
-            pem.as_bytes().to_vec()
-        }
-    })
 }

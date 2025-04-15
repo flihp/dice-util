@@ -31,19 +31,3 @@ impl fmt::Display for Interface {
         }
     }
 }
-
-/// An enum of the possible certificate encodings.
-#[derive(Clone, Debug, ValueEnum)]
-pub enum Encoding {
-    Der,
-    Pem,
-}
-
-impl fmt::Display for Encoding {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Encoding::Der => write!(f, "der"),
-            Encoding::Pem => write!(f, "pem"),
-        }
-    }
-}
