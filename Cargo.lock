@@ -1520,6 +1520,7 @@ dependencies = [
  "ed25519-dalek",
  "env_logger",
  "hubpack",
+ "libipcc",
  "log",
  "p384",
  "pem-rfc7468",
