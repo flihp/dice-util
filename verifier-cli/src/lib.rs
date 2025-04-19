@@ -11,9 +11,9 @@ pub mod ipcc;
 use ipcc::Ipcc;
 
 use anyhow::Result;
-use attest_data::{Attestation, Log, Nonce};
+use attest_data::{Attestation, Log, Nonce, Measurement};
 use clap::ValueEnum;
-use std::fmt;
+use std::{fmt, collections::HashSet};
 use x509_cert::PkiPath;
 
 pub trait Attester {
@@ -54,3 +54,5 @@ impl fmt::Display for Interface {
         }
     }
 }
+
+pub type MeasurementCorpus = HashSet<Measurement>;

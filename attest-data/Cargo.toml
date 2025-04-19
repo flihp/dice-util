@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 getrandom = { workspace = true, optional = true }
+hex.workspace = true
 hubpack.workspace = true
 thiserror = { workspace = true, optional = true }
 salty.workspace = true

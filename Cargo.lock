@@ -117,6 +117,7 @@ name = "attest-data"
 version = "0.4.0"
 dependencies = [
  "getrandom 0.3.1",
+ "hex",
  "hubpack",
  "salty",
  "serde",
@@ -418,9 +419,9 @@ dependencies = [
 
 [[package]]
 name = "der"
-version = "0.7.8"
+version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fffa369a668c8af7dbf8b5e56c9f744fbd399949ed171606040001947de40b1c"
+checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid",
  "der_derive",
@@ -1516,6 +1517,7 @@ dependencies = [
  "attest-data",
  "clap",
  "const-oid",
+ "der",
  "dice-verifier",
  "ed25519-dalek",
  "env_logger",

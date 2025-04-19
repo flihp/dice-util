@@ -12,6 +12,7 @@ use sha3::{
     digest::{core_api::OutputSizeUser, typenum::Unsigned},
     Sha3_256Core,
 };
+use std::hash::Hash;
 
 pub mod messages;
 
@@ -38,7 +39,7 @@ pub enum AttestDataError {
 /// buffers.
 #[serde_as]
 #[derive(
-    Clone, Copy, Debug, Deserialize, PartialEq, Serialize, SerializedSize,
+    Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, SerializedSize,
 )]
 pub struct Array<const N: usize>(#[serde_as(as = "[_; N]")] pub [u8; N]);
 
@@ -130,7 +131,7 @@ impl Nonce {
 
 /// Measurement is an enum that can hold any of the hash algorithms that we support
 #[derive(
-    Clone, Copy, Debug, Deserialize, PartialEq, Serialize, SerializedSize,
+    Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, SerializedSize,
 )]
 pub enum Measurement {
     Sha3_256(Sha3_256Digest),
@@ -139,6 +140,14 @@ pub enum Measurement {
 impl Default for Measurement {
     fn default() -> Self {
         Measurement::Sha3_256(Sha3_256Digest::default())
+    }
+}
+
+impl fmt::Display for Measurement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Sha3_256(digest) => write!(f, "sha3-256;{}", hex::encode(digest)),
+        }
     }
 }
 

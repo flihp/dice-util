@@ -2,15 +2,19 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use anyhow::{anyhow, Result};
-use attest_data::{Attestation, Log, Nonce};
+use anyhow::{anyhow, Context, Result};
+use attest_data::{Attestation, Log, Measurement, Nonce, Sha3_256Digest};
 use clap::{Parser, Subcommand};
+use const_oid::{AssociatedOid, ObjectIdentifier};
+use der::{asn1::OctetString, Decode, DecodeValue, Header, Sequence, SliceReader};
 use dice_verifier::PkiPathSignatureVerifier;
 use env_logger::Builder;
 use hubpack::SerializedSize;
 use log::{info, warn, LevelFilter};
 use pem_rfc7468::LineEnding;
+use sha3::Sha3_256;
 use std::{
+    collections::HashSet,
     fmt::Debug,
     fs::{self, File},
     io::{self, Write},
@@ -22,7 +26,11 @@ use x509_cert::{
 };
 
 use verifier_cli::sprot::{AttestHiffy, AttestRot};
-use verifier_cli::{Attester, Interface};
+use verifier_cli::{Attester, Interface, MeasurementCorpus};
+
+// this doesn't belong here ... maybe `attest-data`?
+const DICE_TCB_INFO: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("2.23.133.5.4.1");
 
 /// Execute HIF operations exposed by the RoT Attest task.
 #[derive(Debug, Parser)]
@@ -115,6 +123,21 @@ enum AttestCommand {
         #[clap(env)]
         cert_chain: PathBuf,
     },
+    /// Verify the measurements from the log and cert chain against the
+    /// provided measurement corpus.
+    VerifyMeasurements {
+        /// Path to file holding the certificate chain / PkiPath.
+        #[clap(env)]
+        cert_chain: PathBuf,
+
+        /// Path to file holding the log
+        #[clap(env)]
+        log: PathBuf,
+
+        /// Path to file holding the reference measurement corpus
+        #[clap(env)]
+        corpus: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -195,9 +218,116 @@ fn main() -> Result<()> {
         } => {
             verify_cert_chain(&ca_cert, &cert_chain, self_signed)?;
         }
+        AttestCommand::VerifyMeasurements {
+            cert_chain,
+            log,
+            corpus,
+        } => {
+            verify_measurements(&cert_chain, &log, &corpus)?;
+        }
     }
 
     Ok(())
+}
+
+// DICE Attestation Architecture §6.1.1:
+// FWID ::== SEQUENCE {
+#[derive(Debug, Sequence)]
+pub struct Fwid {
+    // hashAlg OBJECT IDENTIFIER,
+    hash_algorithm: ObjectIdentifier,
+    // digest OCTET STRING
+    digest: OctetString,
+}
+
+// DICE Attestation Architecture §6.1.1:
+// DiceTcbInfo ::== SEQUENCE {
+#[derive(Debug, Sequence)]
+pub struct DiceTcbInfo {
+    // fwids [6] IMPLICIT FWIDLIST OPTIONAL,
+    // where FWIDLIST ::== SEQUENCE SIZE (1..MAX) OF FWID
+    #[asn1(context_specific = "6", tag_mode = "IMPLICIT", optional = "true")]
+    fwids: Option<Vec<Fwid>>,
+}
+
+trait FromFwid {
+    fn from_fwid(fwid: &Fwid) -> Result<Self> where Self: Sized;
+}
+
+impl FromFwid for Measurement {
+    fn from_fwid(fwid: &Fwid) -> Result<Self> {
+        // map from fwid.hash_algorithm ObjectIdentifier to Measurement enum
+        if fwid.hash_algorithm == Sha3_256::OID {
+            // pull the associated data from fwid.digest OctetString
+            let digest = fwid.digest.as_bytes();
+            let digest = Sha3_256Digest::try_from(digest)?;
+
+            Ok(Measurement::Sha3_256(digest))
+        } else {
+            Err(anyhow!("Unsupported Measurement digest: Sha3_256"))
+        }
+    }
+}
+
+// Check that the measurments in `cert_chain` and `log` are all present in
+// the `corpus`. If an unexpected measurement is encountered it is returned
+// to the caller in an error.
+// NOTE: Before the output from this function can be trusted we must:
+// - verify the provided cert chain against a trust anchor
+// - verify an attestation from the platform using the provided log
+// - verify the integrity of the corpus against a trust anchor
+fn verify_measurements<P: AsRef<Path>>(
+    cert_chain: P,
+    log: P,
+    corpus: P,
+) -> Result<()> {
+    // deserialize MeasurementCorpus
+    let corpus = fs::read_to_string(corpus)?;
+    let corpus: MeasurementCorpus = serde_json::from_str(&corpus)?;
+
+    // deserialize PkiPath
+    let cert_chain = fs::read(cert_chain)?;
+    let cert_chain: PkiPath = Certificate::load_pem_chain(&cert_chain)?;
+
+    let mut fwids: HashSet<Measurement> = HashSet::new();
+    for cert in cert_chain {
+        if let Some(extensions) = cert.tbs_certificate.extensions {
+            for ext in extensions {
+                if ext.extn_id == DICE_TCB_INFO {
+                    if !ext.critical {
+                        warn!("DiceTcbInfo extension is non-critical");
+                    }
+
+                    let mut reader = SliceReader::new(ext.extn_value.as_bytes())?;
+                    let header = Header::decode(&mut reader)
+                        .context("decode Extension header")?;
+
+                    let tcb_info = DiceTcbInfo::decode_value(&mut reader, header)?;
+                    if let Some(ref fwid_vec) = tcb_info.fwids {
+                        for fwid in fwid_vec {
+                            fwids.insert(Measurement::from_fwid(&fwid)?);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let fwids = fwids;
+
+    for fwid in &fwids {
+        println!("fwid: {fwid}");
+    }
+
+    // verify that fwids is a subset of corpus
+    if fwids.is_subset(&corpus) {
+        todo!("Fwids is a subset of Corpus");
+    } else {
+        todo!("Fwids is NOT a subset of Corpus");
+    }
+
+    // deserialize Log
+    let log = fs::read_to_string(log)?;
+    let log: Log = serde_json::from_str(&log)?;
 }
 
 fn verify<P: AsRef<Path>>(
