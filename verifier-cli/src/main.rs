@@ -3,20 +3,20 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use anyhow::{anyhow, Context, Result};
-use attest_data::{Attestation, Log, Measurement, Nonce};
+use attest_data::{Attestation, Log, Nonce};
 use clap::{Parser, Subcommand, ValueEnum};
 use dice_mfg_msgs::PlatformId;
 #[cfg(feature = "ipcc")]
 use dice_verifier::ipcc::AttestIpcc;
 use dice_verifier::{
     hiffy::{AttestHiffy, AttestTask},
-    Attest, FromArtifacts, MeasurementSet,
+    Attest, FromArtifacts, MeasurementSet, ReferenceMeasurements,
 };
 use env_logger::Builder;
 use log::{info, warn, LevelFilter};
 use pem_rfc7468::LineEnding;
+use rats_corim::Corim;
 use std::{
-    collections::HashSet,
     fmt::{self, Debug},
     fs::{self, File},
     io::{self, Write},
@@ -26,8 +26,6 @@ use x509_cert::{
     der::{DecodePem, EncodePem},
     Certificate, PkiPath,
 };
-
-type MeasurementCorpus = HashSet<Measurement>;
 
 fn get_attest(interface: Interface) -> Result<Box<dyn Attest>> {
     match interface {
@@ -321,12 +319,10 @@ fn verify_measurements(
     log: &Path,
     corpus: &Path,
 ) -> Result<()> {
-    let corpus = fs::read_to_string(corpus).context(format!(
-        "measurement corpus from file path: {}",
-        corpus.display()
-    ))?;
-    let corpus: MeasurementCorpus = serde_json::from_str(&corpus)
-        .context("MeasurementCorpus from file contents")?;
+    let corpus = Corim::from_file(corpus)
+        .context(format!("Corim from file path: {}", corpus.display()))?;
+    let corpus = ReferenceMeasurements::try_from(std::slice::from_ref(&corpus))
+        .context("ReferenceMeasurements from CoRIM")?;
 
     let cert_chain = fs::read(cert_chain).context(format!(
         "Read cert chain from file: {}",
@@ -345,7 +341,7 @@ fn verify_measurements(
     let measurements = MeasurementSet::from_artifacts(&cert_chain, &log)
         .context("MeasurementSet from PkiPath")?;
 
-    if measurements.is_subset(&corpus) {
+    if measurements.is_subset(corpus.as_ref()) {
         Ok(())
     } else {
         Err(anyhow!("Measurements are NOT a subset of Corpus"))

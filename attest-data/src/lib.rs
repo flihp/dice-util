@@ -226,6 +226,27 @@ impl TryFrom<&Fwid> for Measurement {
     }
 }
 
+#[cfg(feature = "std")]
+impl TryFrom<rats_corim::Digest> for Measurement {
+    type Error = AttestDataError;
+
+    /// Attempt to create a Measurement from the `rats_corim::Digest` provided.
+    fn try_from(digest: rats_corim::Digest) -> Result<Self, Self::Error> {
+        // https://www.iana.org/assignments/named-information/named-information.xhtml
+        // 10 => sha3 ... TODO: this should be a type
+        match digest.alg {
+            10 => {
+                let bytes = match &digest.val {
+                    rats_corim::TaggedBytes::Bytes(v) => v,
+                    _ => unreachable!(),
+                };
+                Ok(Measurement::Sha3_256(bytes[..].try_into()?))
+            }
+            _ => Err(Self::Error::UnsupportedDigest),
+        }
+    }
+}
+
 /// Log is the collection of measurements recorded
 #[serde_as]
 #[derive(Deserialize, Serialize, SerializedSize)]

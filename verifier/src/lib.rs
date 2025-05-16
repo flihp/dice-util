@@ -10,6 +10,7 @@ use const_oid::db::{rfc5912::ID_EC_PUBLIC_KEY, rfc8410::ID_ED_25519};
 use hubpack::SerializedSize;
 #[cfg(feature = "ipcc")]
 use libipcc::IpccError;
+use rats_corim::Corim;
 use sha3::{Digest, Sha3_256};
 use std::collections::HashSet;
 use thiserror::Error;
@@ -512,5 +513,42 @@ impl FromArtifacts for MeasurementSet {
         }
 
         Ok(measurements)
+    }
+}
+
+/// Possible errors produced by the `ReferenceMeasurements` construction
+/// process.
+#[derive(Debug, Error)]
+pub enum ReferenceMeasurementsError {
+    #[error("Digest is not the expected 32 byte length")]
+    BadDigest(#[from] attest_data::AttestDataError),
+}
+
+/// A collection of measurement values that is used as a source of truth when
+/// appraising the set of measurements derived from an attestation.
+pub struct ReferenceMeasurements(HashSet<Measurement>);
+
+impl TryFrom<&[Corim]> for ReferenceMeasurements {
+    type Error = ReferenceMeasurementsError;
+
+    /// Construct a collection of `ReferenceMeasurements` from the provided
+    /// `Corim` documents. The trustworthiness of these inputs must be
+    /// established independently
+    fn try_from(corims: &[Corim]) -> Result<Self, Self::Error> {
+        let mut set = HashSet::new();
+
+        for corim in corims {
+            for d in corim.iter_digests() {
+                set.insert(d.try_into()?);
+            }
+        }
+
+        Ok(Self(set))
+    }
+}
+
+impl AsRef<HashSet<Measurement>> for ReferenceMeasurements {
+    fn as_ref(&self) -> &HashSet<Measurement> {
+        &self.0
     }
 }
