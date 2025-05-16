@@ -1513,7 +1513,6 @@ dependencies = [
  "serde_json",
  "sha3",
  "tempfile",
- "thiserror 2.0.12",
  "x509-cert",
 ]
 

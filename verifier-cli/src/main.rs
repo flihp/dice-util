@@ -3,17 +3,14 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use anyhow::{anyhow, Context, Result};
-use attest_data::{
-    AttestDataError, Attestation, DiceTcbInfo, Log, Measurement, Nonce,
-    DICE_TCB_INFO,
-};
+use attest_data::{Attestation, Log, Measurement, Nonce};
 use clap::{Parser, Subcommand, ValueEnum};
 use dice_mfg_msgs::PlatformId;
 #[cfg(feature = "ipcc")]
 use dice_verifier::ipcc::AttestIpcc;
 use dice_verifier::{
     hiffy::{AttestHiffy, AttestTask},
-    Attest,
+    Attest, FromArtifacts, MeasurementSet,
 };
 use env_logger::Builder;
 use log::{info, warn, LevelFilter};
@@ -25,11 +22,8 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
 };
-use thiserror::Error;
 use x509_cert::{
-    der::{
-        self, Decode, DecodePem, DecodeValue, EncodePem, Header, SliceReader,
-    },
+    der::{DecodePem, EncodePem},
     Certificate, PkiPath,
 };
 
@@ -315,76 +309,6 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-#[derive(Debug, Error)]
-pub enum MeasurementSetError {
-    #[error("failed to create reader from extension value: {0}")]
-    ExtensionDecode(der::Error),
-    #[error("failed to decode extension header: {0}")]
-    HeaderDecode(der::Error),
-    #[error("failed to decode TcbInfo extension: {0}")]
-    DiceTcbInfoDecode(der::Error),
-    #[error("failed to create Measurement from DiceTcbInfo extension: {0}")]
-    MeasurementConstruct(#[from] AttestDataError),
-}
-
-type MeasurementSet = HashSet<Measurement>;
-
-trait FromArtifacts {
-    fn from_artifacts(
-        pki_path: &PkiPath,
-        log: &Log,
-    ) -> Result<Self, MeasurementSetError>
-    where
-        Self: Sized;
-}
-
-impl FromArtifacts for MeasurementSet {
-    fn from_artifacts(
-        pki_path: &PkiPath,
-        log: &Log,
-    ) -> Result<Self, MeasurementSetError> {
-        let mut measurements = Self::new();
-
-        for cert in pki_path {
-            if let Some(extensions) = &cert.tbs_certificate.extensions {
-                for ext in extensions {
-                    if ext.extn_id == DICE_TCB_INFO {
-                        if !ext.critical {
-                            warn!("DiceTcbInfo extension is non-critical");
-                        }
-
-                        let mut reader =
-                            SliceReader::new(ext.extn_value.as_bytes())
-                                .map_err(
-                                    MeasurementSetError::ExtensionDecode,
-                                )?;
-                        let header = Header::decode(&mut reader)
-                            .map_err(MeasurementSetError::HeaderDecode)?;
-
-                        let tcb_info =
-                            DiceTcbInfo::decode_value(&mut reader, header)
-                                .map_err(
-                                    MeasurementSetError::DiceTcbInfoDecode,
-                                )?;
-                        if let Some(fwid_vec) = &tcb_info.fwids {
-                            for fwid in fwid_vec {
-                                let measurement = Measurement::try_from(fwid)?;
-                                measurements.insert(measurement);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        for measurement in log.iter() {
-            measurements.insert(*measurement);
-        }
-
-        Ok(measurements)
-    }
 }
 
 // Check that the measurments in `cert_chain` and `log` are all present in
