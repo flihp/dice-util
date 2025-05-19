@@ -457,28 +457,17 @@ pub enum MeasurementSetError {
 /// This is a collection to represent the measurements received from an
 /// attestor. These measurements will come from the measurement log and the
 /// DiceTcbInfo extension(s) in the attestation cert chain / pki path.
-pub type MeasurementSet = HashSet<Measurement>;
+pub struct MeasurementSet(HashSet<Measurement>);
 
-/// This trait exists to work around the orphan rule so we can add this method
-/// to the MeasurementSet type alias.
-pub trait FromArtifacts {
-    fn from_artifacts(
-        pki_path: &PkiPath,
-        log: &Log,
-    ) -> Result<Self, MeasurementSetError>
-    where
-        Self: Sized;
-}
-
-impl FromArtifacts for MeasurementSet {
+impl MeasurementSet {
     /// Construct a MeasurementSet from the provided artifacts. The
     /// trustwirthiness of these artifacts must be established independently
     /// (see `verify_cert_chain` and `verify_attestation`).
-    fn from_artifacts(
+    pub fn from_artifacts(
         pki_path: &PkiPath,
         log: &Log,
     ) -> Result<Self, MeasurementSetError> {
-        let mut measurements = Self::new();
+        let mut measurements = HashSet::new();
 
         for cert in pki_path {
             if let Some(extensions) = &cert.tbs_certificate.extensions {
@@ -512,7 +501,12 @@ impl FromArtifacts for MeasurementSet {
             measurements.insert(*measurement);
         }
 
-        Ok(measurements)
+        Ok(MeasurementSet(measurements))
+    }
+
+    /// Thin wrapper over HashSet.is_subset w/ better type info
+    pub fn is_subset(&self, corpus: &ReferenceMeasurements) -> bool {
+        self.0.is_subset(corpus.as_ref())
     }
 }
 

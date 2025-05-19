@@ -10,7 +10,7 @@ use dice_mfg_msgs::PlatformId;
 use dice_verifier::ipcc::AttestIpcc;
 use dice_verifier::{
     hiffy::{AttestHiffy, AttestTask},
-    Attest, FromArtifacts, MeasurementSet, ReferenceMeasurements,
+    Attest, MeasurementSet, ReferenceMeasurements,
 };
 use env_logger::Builder;
 use log::{info, warn, LevelFilter};
@@ -341,7 +341,7 @@ fn verify_measurements(
     let measurements = MeasurementSet::from_artifacts(&cert_chain, &log)
         .context("MeasurementSet from PkiPath")?;
 
-    if measurements.is_subset(corpus.as_ref()) {
+    if measurements.is_subset(&corpus) {
         Ok(())
     } else {
         Err(anyhow!("Measurements are NOT a subset of Corpus"))
