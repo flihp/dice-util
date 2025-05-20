@@ -46,6 +46,34 @@ pub enum AttestError {
     Serialize(hubpack::Error),
 }
 
+/// Possible errors produced in the verification process
+/// NOTE: these should probably be rolled up in the `AttestError`
+#[derive(Debug, Error)]
+pub enum VerifyError {
+    // TODO: this is probably bad ... ish
+    #[error(transparent)]
+    Attest(#[from] AttestError),
+    #[error("Failed verify the certificate chain ")]
+    CertChain(PkiPathSignatureVerifierError),
+    #[error("Failed to generate nonce from platform RNG: {0}")]
+    Nonce(AttestDataError),
+    #[error(
+        "Verification of signature over cert in attestation cert chain \
+        failed: {0}"
+    )]
+    CertSignature(PkiPathSignatureVerifierError),
+    #[error("Attestation verification failed: {0}")]
+    Verification(#[from] VerifyAttestationError),
+    #[error(
+        "Failed to construct measurement set from cert chain and log: {0}"
+    )]
+    MeasurementSet(#[from] MeasurementSetError),
+    #[error("Failed to construct reference measurement set from Corim: {0}")]
+    ReferenceMeasurements(#[from] ReferenceMeasurementsError),
+    #[error("Measurment set from attestor does not satisfy policy: {0}")]
+    BadMeasurements(#[from] VerifyMeasurementsError),
+}
+
 /// The `Attest` trait is implemented by types that provide access to the RoT
 /// attestation API. These types are generally proxies that shuttle data over
 /// some transport between the caller and the RoT.
@@ -66,6 +94,44 @@ pub trait Attest {
     /// unpredictable. Generally the Nonce should be generated from the
     /// platform's random number generator (see `Nonce::from_platform_rng`).
     fn attest(&self, nonce: &Nonce) -> Result<Attestation, AttestError>;
+    // TODO:
+    // - Error handling: This function returns it's own error type. We should
+    // consider using the `AttestationError` if it doesn't get too messy.
+    // - temp files: By wrapping all of this up in a 'one-shot' function the
+    // caller never sees the intermediate artifacts (cert chain, log, nonce &
+    // attestation). `verifier-cli` provides an interface for the caller to
+    // specify a 'work-dir' so these can be preserved if needed. This is a
+    // useful way to preserve evidence that the RoT:
+    // - got the identity that we intended
+    // - produced an attestation that complies with our policy
+    /// TODO: docs
+    fn verify(
+        &self,
+        root: Option<&Certificate>,
+        corim: &[Corim],
+    ) -> Result<(), VerifyError> {
+        let certs = self.get_certificates()?;
+        // check cert chain from attestor against the provided root
+        // Once we've done this we "trust" the data in the cert chain. This
+        // includes any measurements (FWID extensions) and the public key of
+        // the attestation signer.
+        verify_cert_chain(&certs, root).map_err(VerifyError::CertSignature)?;
+
+        let log = self.get_measurement_log()?;
+        let nonce = Nonce::from_platform_rng().map_err(VerifyError::Nonce)?;
+        let attestation = self.attest(&nonce)?;
+        // Verification of the signature over the attestation (log & nonce)
+        // failed. This can happen if a measurement is recorded between the
+        // time we got the log and the attestation. In this case we retry ...
+        // TODO: Do we signal to the caller that they should retry? Retrying
+        // for them seems like a bad idea (how many times?)
+        verify_attestation(&certs[0], &attestation, &log, &nonce)?;
+
+        let measurements = MeasurementSet::from_artifacts(&certs, &log)?;
+        let corpus = ReferenceMeasurements::try_from(corim)?;
+        // Check that measurements from the attestor comply with our policy.
+        Ok(verify_measurements(&measurements, &corpus)?)
+    }
 }
 
 /// Errors related to the creation of signature verifiers for certs in a
