@@ -341,11 +341,8 @@ fn verify_measurements(
     let measurements = MeasurementSet::from_artifacts(&cert_chain, &log)
         .context("MeasurementSet from PkiPath")?;
 
-    if measurements.is_subset(&corpus) {
-        Ok(())
-    } else {
-        Err(anyhow!("Measurements are NOT a subset of Corpus"))
-    }
+    dice_verifier::verify_measurements(&measurements, &corpus)
+        .context("Verify measurements")
 }
 
 fn verify(
