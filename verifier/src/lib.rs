@@ -46,6 +46,34 @@ pub enum AttestError {
     Serialize(hubpack::Error),
 }
 
+/// Possible errors produced in the verification process
+/// NOTE: these should probably be rolled up in the `AttestError`
+#[derive(Debug, Error)]
+pub enum VerifyError {
+    // TODO: this is probably bad ... ish
+    #[error(transparent)]
+    Attest(#[from] AttestError),
+    #[error("Failed verify certificate chain")]
+    CertChain(PkiPathSignatureVerifierError),
+    #[error("Failed to generate nonce from platform RNG: {0}")]
+    Nonce(AttestDataError),
+    #[error(
+        "Verification of signature over cert in attestation cert chain \
+        failed: {0}"
+    )]
+    CertSignature(PkiPathSignatureVerifierError),
+    #[error("Attestation verification failed: {0}")]
+    Verification(#[from] VerifyAttestationError),
+    #[error(
+        "Failed to construct measurement set from cert chain and log: {0}"
+    )]
+    MeasurementSet(#[from] MeasurementSetError),
+    #[error("Failed to construct reference measurement set from Corim: {0}")]
+    ReferenceMeasurements(#[from] ReferenceMeasurementsError),
+    #[error("Measurment set from attestor does not satisfy policy: {0}")]
+    BadMeasurements(#[from] VerifyMeasurementsError),
+}
+
 /// The `Attest` trait is implemented by types that provide access to the RoT
 /// attestation API. These types are generally proxies that shuttle data over
 /// some transport between the caller and the RoT.
@@ -66,6 +94,33 @@ pub trait Attest {
     /// unpredictable. Generally the Nonce should be generated from the
     /// platform's random number generator (see `Nonce::from_platform_rng`).
     fn attest(&self, nonce: &Nonce) -> Result<Attestation, AttestError>;
+    /// This is a one-shot function that performs the attestation verification
+    /// process. It gets all of the required artifacts from the underlying
+    /// implementation of the trait. It then runs them through the verification
+    /// process using the data provided as parameters / trust anchors.
+    fn verify(
+        &self,
+        root: Option<&Certificate>,
+        corim: &Corim,
+    ) -> Result<(), VerifyError> {
+        let certs = self.get_certificates()?;
+        // check cert chain from attestor against the provided root
+        // Once we've done this we "trust" the data in the cert chain. This
+        // includes any measurements (FWID extensions) and the public key of
+        // the attestation signer.
+        verify_cert_chain(&certs, root).map_err(VerifyError::CertSignature)?;
+        let log = self.get_measurement_log()?;
+        let nonce = Nonce::from_platform_rng().map_err(VerifyError::Nonce)?;
+        let attestation = self.attest(&nonce)?;
+        // check that the attestation / signature over the log & nonce
+        // can be verified by the public key from the leaf attestation signer
+        // cert
+        verify_attestation(&certs[0], &attestation, &log, &nonce)?;
+        let measurements = MeasurementSet::from_artifacts(&certs, &log)?;
+        let corpus = ReferenceMeasurements::try_from(corim)?;
+        // check that measurements from the attestor comply with our policy
+        Ok(verify_measurements(&measurements, &corpus)?)
+    }
 }
 
 /// Errors related to the creation of signature verifiers for certs in a
@@ -453,13 +508,13 @@ pub enum ReferenceMeasurementsError {
     BadDigest(#[from] AttestDataError),
 }
 
-impl TryFrom<Corim> for ReferenceMeasurements {
+impl TryFrom<&Corim> for ReferenceMeasurements {
     type Error = ReferenceMeasurementsError;
 
     /// Construct a collection of `ReferenceMeasurements` from the provided
     /// `Corim` documents. The trustworthiness of these inputs must be
     /// established independently
-    fn try_from(corim: Corim) -> Result<Self, Self::Error> {
+    fn try_from(corim: &Corim) -> Result<Self, Self::Error> {
         let mut set = HashSet::new();
 
         for d in corim.iter_digests() {
