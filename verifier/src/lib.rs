@@ -289,8 +289,10 @@ impl CertVerifier for P384CertVerifier {
 pub enum PkiPathSignatureVerifierError {
     #[error("Failed to get signature verifier for certificate: {0}")]
     Unsupported(#[from] CertSigVerifierFactoryError),
-    #[error("The PkiPath provided must be length 2 or more")]
-    PathTooShort,
+    #[error("The PkiPath provided cannot be empty")]
+    EmptyPkiPath,
+    #[error("Unable to verifiy cert chain with the available roots")]
+    NoMatchingRoot,
     #[error("Signature verification failed: {0}")]
     VerifierFailed(#[from] CertVerifierError),
 }
@@ -298,7 +300,7 @@ pub enum PkiPathSignatureVerifierError {
 /// This struct encapsulates the signature verification process for a PkiPath.
 #[derive(Debug)]
 struct PkiPathSignatureVerifier<'a> {
-    root_cert: Option<&'a Certificate>,
+    roots: Option<&'a [Certificate]>,
 }
 
 impl<'a> PkiPathSignatureVerifier<'a> {
@@ -307,15 +309,17 @@ impl<'a> PkiPathSignatureVerifier<'a> {
     /// provided then the `PkiPath`s verified by this verifier must be self-
     /// signed.
     fn new(
-        root_cert: Option<&'a Certificate>,
+        roots: Option<&'a [Certificate]>,
     ) -> Result<Self, PkiPathSignatureVerifierError> {
-        if let Some(cert) = &root_cert {
-            let verifier = CertSigVerifierFactory::get_verifier(cert)?;
-            // verify root cert before using it
-            verifier.verify(cert)?;
+        if let Some(roots) = roots {
+            // verify each root is self-signed: signature on root cert must
+            // verify the public key from the same cert
+            for root in roots {
+                CertSigVerifierFactory::get_verifier(root)?.verify(root)?;
+            }
         }
 
-        Ok(Self { root_cert })
+        Ok(Self { roots })
     }
 
     /// Iterate over the provided PkiPath verifying the signature chain.
@@ -323,48 +327,48 @@ impl<'a> PkiPathSignatureVerifier<'a> {
     /// in a self-signed certificate.
     fn verify(
         &self,
-        pki_path: &PkiPath,
-    ) -> Result<(), PkiPathSignatureVerifierError> {
+        pki_path: &'a [Certificate],
+    ) -> Result<&'a Certificate, PkiPathSignatureVerifierError> {
         if pki_path.len() >= 2 {
-            self._verify(&pki_path[0], &pki_path[1..])
-        } else {
-            Err(PkiPathSignatureVerifierError::PathTooShort)
-        }
-    }
-
-    /// This function is the work horse for verifying `PkiPath`s. It should
-    /// only be called from the `PkiPathVerifier::verify` function.
-    fn _verify(
-        &self,
-        certificate: &Certificate,
-        pki_path: &[Certificate],
-    ) -> Result<(), PkiPathSignatureVerifierError> {
-        let verifier = if !pki_path.is_empty() {
-            // common case: verify that the public key from `pki_path[0]`
-            // can be use to verify the signature over `certificate`
-            CertSigVerifierFactory::get_verifier(&pki_path[0])?
-        } else {
-            // terminal case: `pki_path` is empty, `certificate` is the last
-            // Certificate from the PkiPath that needs verification. The
-            // verifier we use depends on the value of `root`:
-            match &self.root_cert {
-                Some(root_cert) => {
-                    // use `root_cert` to verify `certificate`
-                    CertSigVerifierFactory::get_verifier(root_cert)?
+            // recursive case: at least 2 certs in the PkiPath
+            // verify pki_path[0] w/ public key from pki_path[1]
+            let verifier = CertSigVerifierFactory::get_verifier(&pki_path[1])?;
+            verifier.verify(&pki_path[0])?;
+            // recurse
+            self.verify(&pki_path[1..])
+        } else if pki_path.len() == 1 {
+            // terminal condition: pki path length is 1
+            if let Some(roots) = self.roots {
+                for root in roots {
+                    let verifier = CertSigVerifierFactory::get_verifier(root)?;
+                    match verifier.verify(&pki_path[0]) {
+                        // if verification succeeds we return the root that it
+                        // verified against
+                        Ok(_) => return Ok(root),
+                        // if verification fails we move on to the next root
+                        Err(CertVerifierError::Signature(_)) => continue,
+                        // if there's any other error return it
+                        Err(e) => {
+                            return Err(
+                                PkiPathSignatureVerifierError::VerifierFailed(
+                                    e,
+                                ),
+                            )
+                        }
+                    }
                 }
-                None => {
-                    // use `certificate to verify signature on `certificate`
-                    CertSigVerifierFactory::get_verifier(certificate)?
-                }
+                // if we get this far none of the roots were able to verify
+                // the last cert
+                Err(PkiPathSignatureVerifierError::NoMatchingRoot)
+            } else {
+                // if roots are None verify the final cert w/ itself
+                let verifier =
+                    CertSigVerifierFactory::get_verifier(&pki_path[0])?;
+                verifier.verify(&pki_path[0])?;
+                Ok(&pki_path[0])
             }
-        };
-        verifier.verify(certificate)?;
-
-        if !pki_path.is_empty() {
-            // recurse verifying the signature on next cert
-            self._verify(&pki_path[0], &pki_path[1..])
         } else {
-            Ok(())
+            Err(PkiPathSignatureVerifierError::EmptyPkiPath)
         }
     }
 }
@@ -491,11 +495,11 @@ pub enum VerifyAttestationError {
 /// produce cert chains that terminate with a self-signed cert. To verify such
 /// a cert chain the caller must pass `None` for the root to case the
 /// verification function to accept the self-signed root.
-pub fn verify_cert_chain(
-    pki_path: &PkiPath,
-    root: Option<&Certificate>,
-) -> Result<(), PkiPathSignatureVerifierError> {
-    PkiPathSignatureVerifier::new(root)?.verify(pki_path)
+pub fn verify_cert_chain<'a>(
+    pki_path: &'a PkiPath,
+    roots: Option<&'a [Certificate]>,
+) -> Result<&'a Certificate, PkiPathSignatureVerifierError> {
+    PkiPathSignatureVerifier::new(roots)?.verify(pki_path)
 }
 
 /// This function uses the provided artifacts to establish trust in the Log.
