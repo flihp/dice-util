@@ -654,6 +654,21 @@ ezRrVF9+9OkCymi+xqWG8UN87sN/9Qk=
         assert!(verify_cert_chain(&cert_chain, None).is_err());
     }
 
+    // Verify a cert chain against the wrong root & ensure we get an error.
+    #[test]
+    fn verify_cert_chain_no_good_root() {
+        let root = Certificate::from_pem(ROOT_BAD_PEM).unwrap();
+        let cert_chain = vec![
+            Certificate::from_pem(ALIAS_PEM).unwrap(),
+            Certificate::from_pem(DEVICE_ID_PEM).unwrap(),
+        ];
+
+        let res =
+            verify_cert_chain(&cert_chain, Some(std::slice::from_ref(&root)));
+
+        assert!(res.is_err());
+    }
+
     // Verify a valid, self-signed cert chain. We make the chain self-signed
     // by including the root in the correct position.
     #[test]
