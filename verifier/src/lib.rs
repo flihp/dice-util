@@ -719,4 +719,18 @@ ezRrVF9+9OkCymi+xqWG8UN87sN/9Qk=
 
         assert!(res.is_err());
     }
+
+    // Attempt to verify a cert chain that isn't self-signed as though it were
+    // self-signed & ensure that we fail.
+    #[test]
+    fn verify_cert_chain_not_self_signed() {
+        let cert_chain = vec![
+            Certificate::from_pem(ALIAS_PEM).unwrap(),
+            Certificate::from_pem(DEVICE_ID_PEM).unwrap(),
+        ];
+
+        let res = verify_cert_chain(&cert_chain, None);
+
+        assert!(res.is_err());
+    }
 }
