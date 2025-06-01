@@ -567,3 +567,63 @@ pub fn verify_measurements(
         Err(VerifyMeasurementsError::NotSubset)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::*;
+    use x509_cert::{der::DecodePem, Certificate};
+
+    const ROOT_0_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBtTCCAWegAwIBAgIBADAFBgMrZXAwWTELMAkGA1UEBhMCVVMxHzAdBgNVBAoM
+Fk94aWRlIENvbXB1dGVyIENvbXBhbnkxKTAnBgNVBAMMIDBYVjI6MDAwLTAwMDAw
+MDA6MDAwOjAwMDAwMDAwMDAwMCAXDTI1MDUzMTE2MjU0MloYDzk5OTkxMjMxMjM1
+OTU5WjBZMQswCQYDVQQGEwJVUzEfMB0GA1UECgwWT3hpZGUgQ29tcHV0ZXIgQ29t
+cGFueTEpMCcGA1UEAwwgMFhWMjowMDAtMDAwMDAwMDowMDA6MDAwMDAwMDAwMDAw
+KjAFBgMrZXADIQBPGBgsC4CH7C+eKVxdZUwlH0b0B6EcS3XOwjvbkruJxqNSMFAw
+DwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAgQwLQYDVR0gAQH/BCMwITAJ
+BgdngQUFBGQGMAkGB2eBBQUEZAgwCQYHZ4EFBQRkDDAFBgMrZXADQQA0/VXdySYo
+fli+6yShUCkuZDVwesR52N98P6vDyNFvln/RF+6G5jc5T/9JtyxVwpuRVmKIWOlK
+yyVhSdKemygH
+-----END CERTIFICATE-----
+"#;
+    const ALIAS_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBrDCCAV6gAwIBAgIBADAFBgMrZXAwQjELMAkGA1UEBhMCVVMxHzAdBgNVBAoM
+Fk94aWRlIENvbXB1dGVyIENvbXBhbnkxEjAQBgNVBAMMCWRldmljZS1pZDAgFw0y
+NTA1MzExNjI1NDJaGA85OTk5MTIzMTIzNTk1OVowPjELMAkGA1UEBhMCVVMxHzAd
+BgNVBAoMFk94aWRlIENvbXB1dGVyIENvbXBhbnkxDjAMBgNVBAMMBWFsaWFzMCow
+BQYDK2VwAyEAij/G9qE5X/V5MKIq3MSy9n0NtZarYjYZRZ1X11ryLa6jezB5MAwG
+A1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMBcGA1UdIAEB/wQNMAswCQYHZ4EF
+BQRkCDBABgZngQUFBAEBAf8EMzAxpi8wLQYJYIZIAWUDBAIIBCCqqqqqqqqqqqqq
+qqqqqqqqqqqqqqqqqqqqqqqqqqqqqjAFBgMrZXADQQC1BtAtcUmlHPoBgOqvvx4s
+pAWhNNXiHLb1DoPg4CbmWnImT477NU3MB3APB+K7TowbMqlejZubsvm6BfwH98wA
+-----END CERTIFICATE-----
+"#;
+    const DEVICE_ID_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBkzCCAUWgAwIBAgIBADAFBgMrZXAwWTELMAkGA1UEBhMCVVMxHzAdBgNVBAoM
+Fk94aWRlIENvbXB1dGVyIENvbXBhbnkxKTAnBgNVBAMMIDBYVjI6MDAwLTAwMDAw
+MDA6MDAwOjAwMDAwMDAwMDAwMCAXDTI1MDUzMTE2MjU0MloYDzk5OTkxMjMxMjM1
+OTU5WjBCMQswCQYDVQQGEwJVUzEfMB0GA1UECgwWT3hpZGUgQ29tcHV0ZXIgQ29t
+cGFueTESMBAGA1UEAwwJZGV2aWNlLWlkMCowBQYDK2VwAyEAmjR8j+BKslllHrNp
+EiqlaVXic78FKRrWXB2hnri0jZ6jRzBFMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0P
+AQH/BAQDAgIEMCIGA1UdIAEB/wQYMBYwCQYHZ4EFBQRkCDAJBgdngQUFBGQMMAUG
+AytlcANBAKPxOhjG/1pIzodhKzHUVJntVItYJlnwefDlUz16zyxjsysbVWBKOnN7
+ezRrVF9+9OkCymi+xqWG8UN87sN/9Qk=
+-----END CERTIFICATE-----
+"#;
+    // verify a valid cert chain against the matching root and ensure that
+    // we get back a reference to the expected root
+    #[test]
+    fn verify_cert_chain_good() {
+        let root = Certificate::from_pem(ROOT_0_PEM).unwrap();
+        let cert_chain = vec![
+            Certificate::from_pem(ALIAS_PEM).unwrap(),
+            Certificate::from_pem(DEVICE_ID_PEM).unwrap(),
+        ];
+
+        let anchor =
+            verify_cert_chain(&cert_chain, Some(std::slice::from_ref(&root)))
+                .unwrap();
+
+        assert_eq!(anchor, &root);
+    }
+}
