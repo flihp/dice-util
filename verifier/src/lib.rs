@@ -586,6 +586,19 @@ fli+6yShUCkuZDVwesR52N98P6vDyNFvln/RF+6G5jc5T/9JtyxVwpuRVmKIWOlK
 yyVhSdKemygH
 -----END CERTIFICATE-----
 "#;
+    const ROOT_BAD_PEM: &str = r#"-----BEGIN CERTIFICATE-----
+MIIBtTCCAWegAwIBAgIBADAFBgMrZXAwWTELMAkGA1UEBhMCVVMxHzAdBgNVBAoM
+Fk94aWRlIENvbXB1dGVyIENvbXBhbnkxKTAnBgNVBAMMIDBYVjI6MDAwLTAwMDAw
+MDA6MDAwOjAwMDAwMDAwMDAwMCAXDTI1MDYwMTE2NTc0MVoYDzk5OTkxMjMxMjM1
+OTU5WjBZMQswCQYDVQQGEwJVUzEfMB0GA1UECgwWT3hpZGUgQ29tcHV0ZXIgQ29t
+cGFueTEpMCcGA1UEAwwgMFhWMjowMDAtMDAwMDAwMDowMDA6MDAwMDAwMDAwMDAw
+KjAFBgMrZXADIQBwLUhOMfbi14vhrb3JN9C/m+9ur6iQKzSYJz+wAfgboaNSMFAw
+DwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAgQwLQYDVR0gAQH/BCMwITAJ
+BgdngQUFBGQGMAkGB2eBBQUEZAgwCQYHZ4EFBQRkDDAFBgMrZXADQQDPqBoIOeJl
+jdlBUvZJG9pJS+arSxKszMUX395vsP7YnugpyuwrHI/JMX37p40+A6TQToLmOvPE
+x4pL7D1+t7cK
+-----END CERTIFICATE-----
+"#;
     const ALIAS_PEM: &str = r#"-----BEGIN CERTIFICATE-----
 MIIBrDCCAV6gAwIBAgIBADAFBgMrZXAwQjELMAkGA1UEBhMCVVMxHzAdBgNVBAoM
 Fk94aWRlIENvbXB1dGVyIENvbXBhbnkxEjAQBgNVBAMMCWRldmljZS1pZDAgFw0y
@@ -654,5 +667,24 @@ ezRrVF9+9OkCymi+xqWG8UN87sN/9Qk=
         let anchor = verify_cert_chain(&cert_chain, None).unwrap();
 
         assert_eq!(anchor, &cert_chain[2]);
+    }
+
+    // Verify a valid cert chain against two roots: Only the second root can
+    // validate the cert chain and we check that this is the one returned to
+    // us.
+    #[test]
+    fn verify_cert_chain_second_root() {
+        let roots = vec![
+            Certificate::from_pem(ROOT_BAD_PEM).unwrap(),
+            Certificate::from_pem(ROOT_0_PEM).unwrap(),
+        ];
+        let cert_chain = vec![
+            Certificate::from_pem(ALIAS_PEM).unwrap(),
+            Certificate::from_pem(DEVICE_ID_PEM).unwrap(),
+        ];
+
+        let anchor = verify_cert_chain(&cert_chain, Some(&roots)).unwrap();
+
+        assert_eq!(anchor, &roots[1]);
     }
 }
