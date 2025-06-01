@@ -640,4 +640,19 @@ ezRrVF9+9OkCymi+xqWG8UN87sN/9Qk=
 
         assert!(verify_cert_chain(&cert_chain, None).is_err());
     }
+
+    // Verify a valid, self-signed cert chain. We make the chain self-signed
+    // by including the root in the correct position.
+    #[test]
+    fn verify_cert_chain_self() {
+        let cert_chain = vec![
+            Certificate::from_pem(ALIAS_PEM).unwrap(),
+            Certificate::from_pem(DEVICE_ID_PEM).unwrap(),
+            Certificate::from_pem(ROOT_0_PEM).unwrap(),
+        ];
+
+        let anchor = verify_cert_chain(&cert_chain, None).unwrap();
+
+        assert_eq!(anchor, &cert_chain[2]);
+    }
 }
