@@ -702,4 +702,21 @@ ezRrVF9+9OkCymi+xqWG8UN87sN/9Qk=
 
         assert_eq!(anchor, &roots[1]);
     }
+
+    // Attempt to verify a cert chain against a root that is not self-signed.
+    #[test]
+    fn verify_cert_chain_not_root() {
+        let roots = vec![
+            Certificate::from_pem(ROOT_0_PEM).unwrap(),
+            Certificate::from_pem(DEVICE_ID_PEM).unwrap(),
+        ];
+        let cert_chain = vec![
+            Certificate::from_pem(ALIAS_PEM).unwrap(),
+            Certificate::from_pem(DEVICE_ID_PEM).unwrap(),
+        ];
+
+        let res = verify_cert_chain(&cert_chain, Some(&roots));
+
+        assert!(res.is_err());
+    }
 }
