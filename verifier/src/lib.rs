@@ -626,4 +626,18 @@ ezRrVF9+9OkCymi+xqWG8UN87sN/9Qk=
 
         assert_eq!(anchor, &root);
     }
+
+    // Attempt to verify an invalid cert chain and ensure failure. The cert
+    // chain is invalid because the leaf and intermediate are swapped so this
+    // fails before the root is checked.
+    #[test]
+    fn verify_cert_chain_bad() {
+        let cert_chain = vec![
+            Certificate::from_pem(DEVICE_ID_PEM).unwrap(),
+            Certificate::from_pem(ALIAS_PEM).unwrap(),
+            Certificate::from_pem(ROOT_0_PEM).unwrap(),
+        ];
+
+        assert!(verify_cert_chain(&cert_chain, None).is_err());
+    }
 }
