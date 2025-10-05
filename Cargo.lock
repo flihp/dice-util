@@ -209,6 +209,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "barcode"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "const-oid",
+ "thiserror 2.0.12",
+ "x509-cert",
+]
+
+[[package]]
 name = "base16ct"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -613,6 +623,7 @@ name = "dice-mfg-msgs"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "barcode",
  "const-oid",
  "corncobs",
  "hubpack",

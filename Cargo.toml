@@ -2,12 +2,13 @@
 
 members = [
     "attest-data",
+    "attest-mock",
+    "barcode",
     "dice-cert-tmpl",
     "dice-mfg",
     "dice-mfg-msgs",
     "yhsm-audit",
     "verifier-cli",
-    "attest-mock",
 ]
 resolver = "2"
 
