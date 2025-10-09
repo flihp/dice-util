@@ -711,17 +711,21 @@ pub enum BarcodeError {
     PartNotV1,
     #[error("Barcodes with the 0XV2 prefix must have v2 part numbers")]
     PartNotV2,
-    #[error("Part number is malformed")]
+    #[cfg_attr(not(feature = "std"), error("Part number is invalid: {0}"))]
+    #[cfg_attr(feature = "std", error("Part number is invalid"))]
     Part(#[from] PartError),
-    #[error("Prefix is unknown")]
+    #[cfg_attr(not(feature = "std"), error("Prefix is invalid: {0}"))]
+    #[cfg_attr(feature = "std", error("Prefix is invalid"))]
     Prefix(#[from] PrefixError),
-    #[error("Revision is malformed")]
+    #[cfg_attr(not(feature = "std"), error("Revision is invalid: {0}"))]
+    #[cfg_attr(feature = "std", error("Revision is invalid"))]
     Revision(#[from] RevisionError),
     #[error("Barcode has NULL revision but prefix requires a revision number")]
     RevisionIsNull,
     #[error("Barcode has revision number but prefix requires a NULL revision")]
     RevisionNotNull,
-    #[error("Serial number is malformed")]
+    #[cfg_attr(not(feature = "std"), error("Serial number is invalid: {0}"))]
+    #[cfg_attr(feature = "std", error("Serial number is invalid"))]
     Serial(#[from] SerialError),
     #[error(
         "Barcodes with the 0XV1 or PDV1 prefix must have v1 serial numbers"
@@ -826,15 +830,24 @@ pub struct BaseboardId {
 #[cfg(feature = "std")]
 #[derive(Debug, thiserror::Error, PartialEq, SlogInlineError)]
 pub enum BaseboardIdPkiPathError {
-    #[error("Failed to decode CountryName")]
+    #[cfg_attr(
+        not(feature = "std"),
+        error("Failed to decode CountryName: {0}")
+    )]
+    #[cfg_attr(feature = "std", error("Failed to decode CountryName"))]
     CountryNameDecode(DerError),
     #[error("Expected CountryName \"US\", got {0}")]
     InvalidCountryName(String),
-    #[error("Failed to decode OrganizationName")]
+    #[cfg_attr(
+        not(feature = "std"),
+        error("Failed to decode OrganizationName: {0}")
+    )]
+    #[cfg_attr(feature = "std", error("Failed to decode OrganizationName"))]
     OrganizationNameDecode(#[source] DerError),
     #[error("Expected CountryName \"US\", got {0}")]
     InvalidOrganizationName(String),
-    #[error("Failed to decode OrganizationName")]
+    #[cfg_attr(not(feature = "std"), error("Failed to decode CommonName: {0}"))]
+    #[cfg_attr(feature = "std", error("Failed to decode CommonName"))]
     CommonNameDecode(#[source] DerError),
     #[error("More than one PlatformId found in PkiPath")]
     MultiplePlatformIds,
