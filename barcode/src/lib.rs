@@ -136,7 +136,7 @@ impl TryFrom<&str> for Prefix {
 /// is in the dictionary `dict`. If a character is found that is not in `dict`
 /// then we return the offending index & char as `Some(InvalidChar)`.
 /// Otherwise return `None` indicating that all characters in `s` are in `dict`.
-fn is_char_in_dict(s: &str, dict: &[char]) -> Option<InvalidChar> {
+fn find_invalid_char_in_dict(s: &str, dict: &[char]) -> Option<InvalidChar> {
     for (i, c) in s.chars().enumerate() {
         if !dict.contains(&c) {
             return Some(InvalidChar::new(i, c));
@@ -163,7 +163,7 @@ fn pn_fmt_check_0xv1(s: &str) -> Result<&str, PartV1Error> {
         return Err(PartV1Error::InvalidLength);
     }
 
-    if let Some(t) = is_char_in_dict(s, &DIGITS) {
+    if let Some(t) = find_invalid_char_in_dict(s, &DIGITS) {
         Err(PartV1Error::InvalidChar(t))
     } else {
         Ok(s)
@@ -220,14 +220,14 @@ fn pn_fmt_check_0xv2(s: &str) -> Result<&str, PartV2Error> {
     }
 
     // all remaining characters must be ascii digits
-    if let Some(t) = is_char_in_dict(&s[..3], &DIGITS) {
+    if let Some(t) = find_invalid_char_in_dict(&s[..3], &DIGITS) {
         return Err(PartV2Error::InvalidChar(t));
     }
 
     // NOTE: When checking the second half of the PN when we run
     // into an invalid character we must shift its offset by 4 to
     // account for the length of the full PN.
-    if let Some(t) = is_char_in_dict(&s[4..], &DIGITS) {
+    if let Some(t) = find_invalid_char_in_dict(&s[4..], &DIGITS) {
         let t = InvalidChar::new(t.index + 4, t.character);
         Err(PartV2Error::InvalidChar(t))
     } else {
@@ -284,7 +284,7 @@ fn pn_fmt_check_terra(s: &str) -> Result<&str, PartTerraError> {
         return Err(PartTerraError::LeadingZero);
     }
 
-    if let Some(t) = is_char_in_dict(s, &DIGITS) {
+    if let Some(t) = find_invalid_char_in_dict(s, &DIGITS) {
         Err(PartTerraError::InvalidChar(t))
     } else {
         Ok(s)
@@ -380,7 +380,7 @@ fn rev_fmt_check(s: &str) -> Result<&str, RevisionError> {
         return Err(RevisionError::InvalidLength);
     }
 
-    if let Some(t) = is_char_in_dict(s, &DIGITS) {
+    if let Some(t) = find_invalid_char_in_dict(s, &DIGITS) {
         Err(RevisionError::InvalidChar(t))
     } else {
         Ok(s)
@@ -433,7 +433,7 @@ fn rev_null_fmt_check(s: &str) -> Result<&str, RevisionError> {
 
     // we could just compare the input string to REV_NULL but this gives the
     // caller better info: the first invalid character
-    if let Some(t) = is_char_in_dict(s, &['R']) {
+    if let Some(t) = find_invalid_char_in_dict(s, &['R']) {
         Err(RevisionError::InvalidChar(t))
     } else {
         Ok(s)
@@ -610,7 +610,7 @@ fn snv2_fmt_check(s: &str) -> Result<&str, SerialV2Error> {
     }
 
     // the remaining 7 characters must be in the defined dictionary
-    if let Some(t) = is_char_in_dict(s, &SNV2_DICT) {
+    if let Some(t) = find_invalid_char_in_dict(s, &SNV2_DICT) {
         Err(SerialV2Error::InvalidChar(t))
     } else {
         Ok(s)
