@@ -29,6 +29,8 @@
 use const_oid::db::rfc4519::COMMON_NAME;
 use core::{fmt, num::ParseIntError};
 #[cfg(feature = "std")]
+use slog_error_chain::SlogInlineError;
+#[cfg(feature = "std")]
 use x509_cert::{
     PkiPath,
     der::{Error as DerError, asn1::Utf8StringRef},
@@ -695,6 +697,7 @@ impl<'a> TryFrom<&'a str> for Serial<'a> {
 /// A type representing the errors that can be encountered while parsing a
 /// barcode string
 #[derive(Debug, thiserror::Error, PartialEq)]
+#[cfg_attr(feature = "std", derive(SlogInlineError))]
 pub enum BarcodeError {
     #[error("The input string has no delimiters")]
     NoDelim,
@@ -708,17 +711,17 @@ pub enum BarcodeError {
     PartNotV1,
     #[error("Barcodes with the 0XV2 prefix must have v2 part numbers")]
     PartNotV2,
-    #[error("Malformed PartError: {0}")]
+    #[error("Part number is malformed")]
     Part(#[from] PartError),
-    #[error("Barcode has bad prefix: {0}")]
+    #[error("Prefix is unknown")]
     Prefix(#[from] PrefixError),
-    #[error("Barcode has bad revision: {0}")]
+    #[error("Revision is malformed")]
     Revision(#[from] RevisionError),
     #[error("Barcode has NULL revision but prefix requires a revision number")]
     RevisionIsNull,
     #[error("Barcode has revision number but prefix requires a NULL revision")]
     RevisionNotNull,
-    #[error("Barcode has bad serial number: {0}")]
+    #[error("Serial number is malformed")]
     Serial(#[from] SerialError),
     #[error(
         "Barcodes with the 0XV1 or PDV1 prefix must have v1 serial numbers"
@@ -821,18 +824,18 @@ pub struct BaseboardId {
 }
 
 #[cfg(feature = "std")]
-#[derive(Debug, thiserror::Error, PartialEq)]
+#[derive(Debug, thiserror::Error, PartialEq, SlogInlineError)]
 pub enum BaseboardIdPkiPathError {
     #[error("Failed to decode CountryName")]
     CountryNameDecode(DerError),
     #[error("Expected CountryName \"US\", got {0}")]
     InvalidCountryName(String),
     #[error("Failed to decode OrganizationName")]
-    OrganizationNameDecode(DerError),
+    OrganizationNameDecode(#[source] DerError),
     #[error("Expected CountryName \"US\", got {0}")]
     InvalidOrganizationName(String),
     #[error("Failed to decode OrganizationName")]
-    CommonNameDecode(DerError),
+    CommonNameDecode(#[source] DerError),
     #[error("More than one PlatformId found in PkiPath")]
     MultiplePlatformIds,
     #[error("No PlatformId found in PkiPath")]
