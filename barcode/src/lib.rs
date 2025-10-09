@@ -201,7 +201,7 @@ impl<'a> TryFrom<&'a str> for PartV1<'a> {
 /// part number.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum PartV2Error {
-    #[error("Length of string is not 10 characters")]
+    #[error("Length of string is not 11 characters")]
     InvalidLength,
     #[error("Invalid character: {0}")]
     InvalidChar(InvalidChar),
@@ -266,7 +266,7 @@ impl<'a> TryFrom<&'a str> for PartV2<'a> {
 /// Terra part number.
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum PartTerraError {
-    #[error("Length of string is not 10 characters")]
+    #[error("Length of string is not 7 characters")]
     InvalidLength,
     #[error("Invalid character: {0}")]
     InvalidChar(InvalidChar),
