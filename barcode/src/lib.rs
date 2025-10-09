@@ -5,20 +5,20 @@
 //! This crate provides types that represent a Barcode. A barcode is a string
 //! that's made up of a number of substrings separated by a `:` char. Of the
 //! known prefixes each contians:
-//! - prefix: a string (typically 4 characters) that identify the format of the
-//!   rest of the barcode
-//! - part number: a string of variable length that identifies the type of the
-//!   part
+//! - prefix: A string (typically 4 characters) that identify the format of the
+//!   rest of the barcode.
+//! - part number: A string of variable length that identifies the type of the
+//!   part.
 //! - revision number: In most cases this will be a 3 digit unsigned integer.
 //!   For the platform identity v2 barcode we use a string of "RRR" since the
 //!   actual revision number may change after the platform identity
 //!   certificate was issued.
-//! - serial number: a string of varying length, made up of characters encoding
-//!   some information
+//! - serial number: A string of varying length, made up of characters that
+//!   uniquely identify the part, and may encode some information.
 //!
 //! Use the `Barcode` type to parse the known barcode strings into their
 //! components. This type is available in both the `std` and `no_std`
-//! configuration
+//! configuration.
 //!
 //! The `BaseboardId` type (only available with the `std` feature) is used to
 //! extract the part and serial numbers that uniquely identify a platform.
