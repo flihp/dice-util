@@ -4,12 +4,12 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use barcode::{
-    Barcode, BarcodeError, Prefix, PREFIX_PDV1, PREFIX_PDV2, SEPARATOR,
-};
 #[cfg(feature = "std")]
 use const_oid::db::rfc4519::COMMON_NAME;
 use core::{fmt, str::Utf8Error};
+use dice_util_barcode::{
+    Barcode, BarcodeError, Prefix, PREFIX_PDV1, PREFIX_PDV2, SEPARATOR,
+};
 use hubpack::SerializedSize;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
@@ -399,7 +399,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     use anyhow::Context;
-    use barcode::{
+    use dice_util_barcode::{
         InvalidChar, PartError, PartV2Error, PrefixError, RevisionError,
         SerialError, SerialV1Error,
     };
