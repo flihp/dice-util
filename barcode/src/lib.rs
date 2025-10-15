@@ -840,9 +840,9 @@ impl<'a> TryFrom<&'a str> for Barcode<'a> {
                 Part::V1(_) => (),
                 _ => return Err(Self::Error::PartNotV1),
             },
-            // must be in v2 format
+            // must be in v2 or terra format
             Prefix::PDV1 | Prefix::ZeroXV2 | Prefix::PDV2 => match part {
-                Part::V2(_) => (),
+                Part::V2(_) | Part::Terra(_) => (),
                 _ => return Err(Self::Error::PartNotV2),
             },
         }
