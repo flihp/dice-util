@@ -122,98 +122,14 @@ impl TryFrom<&str> for PlatformId {
 
     /// Attempt to construct a `PlatformId` instance from a string
     fn try_from(s: &str) -> Result<PlatformId, Self::Error> {
-        let barcode = Barcode::try_from(s)?;
+        let bytes = s.as_bytes();
+        if bytes.len() > PLATFORM_ID_MAX_LEN {
+            // this is a lie
+            return Err(PlatformIdError::NoDelim);
+        }
 
-        // memory to collect parts of the barcode that make up the PlatformId
-        // & indexes for copying data into it
         let mut pdv2 = [0u8; PLATFORM_ID_MAX_LEN];
-
-        // offsets used copy bytes into `pdv2`
-        let mut start = 0;
-        let bytes = match barcode.prefix {
-            // preserve the format / prefix of PDV1
-            Prefix::PDV1 => PREFIX_PDV1.as_bytes(),
-            // preserve the prefix for PDV2 & convert 0XV1 & 2 to PDV2
-            Prefix::ZeroXV1 | Prefix::ZeroXV2 | Prefix::PDV2 => {
-                PREFIX_PDV2.as_bytes()
-            }
-        };
-        let mut end = bytes.len();
-        pdv2[start..end].copy_from_slice(bytes);
-
-        // set up a byte slice w/ the SEPARATOR char that we'll reuse
-        let sep = SEPARATOR.as_bytes();
-
-        // write separator
-        start = end;
-        end += 1;
-        pdv2[start..end].copy_from_slice(sep);
-
-        // write part number
-        start = end;
-        let part = barcode.part.as_str();
-        // NOTE: how we update `start` depends on the type of the prefix so we
-        // return `end` / the new `start`
-        start = match barcode.prefix {
-            // 0XV1 part number strings are v1 & must have a hyphen added to
-            // become PDV2
-            Prefix::ZeroXV1 => {
-                // write first 3 bytes of the part number
-                let bytes = &part.as_bytes()[..3];
-                end += bytes.len();
-                pdv2[start..end].copy_from_slice(bytes);
-
-                // set up byte slice w/ ASCII for hyphen char '-'
-                let hyphen = b"-";
-
-                // write the hyphen missing from v1 part numbers
-                start = end;
-                end += hyphen.len();
-                pdv2[start..end].copy_from_slice(hyphen);
-
-                // write the last 7 bytes of the part number
-                let bytes = &part.as_bytes()[3..];
-                start = end;
-                end += bytes.len();
-                pdv2[start..end].copy_from_slice(bytes);
-
-                end
-            }
-            // 0XV2, PDV1 & 2 already have v2 part numbers
-            Prefix::ZeroXV2 | Prefix::PDV1 | Prefix::PDV2 => {
-                let bytes = part.as_bytes();
-                end += bytes.len();
-                pdv2[start..end].copy_from_slice(bytes);
-
-                end
-            }
-        };
-
-        // write separator: `start` was updated above
-        end += sep.len();
-        pdv2[start..end].copy_from_slice(sep);
-
-        // write revision
-        start = end;
-
-        // preserve the part number for PDV1, all others will become PDV2
-        let bytes = match barcode.prefix {
-            Prefix::PDV1 => barcode.revision.as_bytes(),
-            Prefix::ZeroXV1 | Prefix::ZeroXV2 | Prefix::PDV2 => b"RRR",
-        };
-        end += bytes.len();
-        pdv2[start..end].copy_from_slice(bytes);
-
-        // write separator
-        start = end;
-        end += sep.len();
-        pdv2[start..end].copy_from_slice(sep);
-
-        // write serial number
-        start = end;
-        let bytes = barcode.serial.as_bytes();
-        end += bytes.len();
-        pdv2[start..end].copy_from_slice(bytes);
+        pdv2[..bytes.len()].copy_from_slice(bytes);
 
         Ok(Self(pdv2))
     }
