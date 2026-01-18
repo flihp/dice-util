@@ -83,6 +83,12 @@ enum CertSubCommand {
         #[clap(long)]
         issuer_cn: bool,
 
+        /// Include the serialnumber in the cert template. If omitted the
+        /// serialnumber field will remain unchanged and the template will not
+        /// have a `SERIAL_NUMBER_RANGE`.
+        #[clap(long)]
+        serial_number: bool,
+
         /// Cert has subject with CN
         #[clap(long)]
         subject_cn: bool,
@@ -167,6 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 fwid,
                 path,
                 issuer_cn,
+                serial_number,
                 subject_cn,
             } => {
                 let mut cert = encoding::decode_cert(&path, &args.encoding)?;
@@ -179,14 +186,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 writeln!(out, "{ORIGIN_TEXT}\n")?;
                 writeln!(out, "pub const SIZE: usize = {};", cert.len())?;
 
-                let range = cert.get_serial_number_offsets()?;
-                dice_cert_tmpl::write_range(
-                    &mut out,
-                    "SERIAL_NUMBER",
-                    range.start,
-                    range.end,
-                )?;
-                cert.clear_range(range.start, range.end);
+                if serial_number {
+                    let range = cert.get_serial_number_offsets()?;
+                    dice_cert_tmpl::write_range(
+                        &mut out,
+                        "SERIAL_NUMBER",
+                        range.start,
+                        range.end,
+                    )?;
+                    cert.clear_range(range.start, range.end);
+                }
 
                 if issuer_cn {
                     let range = cert.get_issuer_cn_offsets()?.ok_or(
