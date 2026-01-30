@@ -4,10 +4,11 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
+#[cfg(feature = "ipcc")]
+use dice_verifier::ipcc::AttestIpcc;
 use dice_verifier::{
     Attest, Nonce,
     hiffy::{AttestHiffy, AttestTask},
-    ipcc::AttestIpcc,
 };
 use std::{
     fmt,
@@ -21,6 +22,7 @@ use std::{
 
 #[derive(Clone, Debug, ValueEnum)]
 enum Interface {
+    #[cfg(feature = "ipcc")]
     Ipcc,
     Hiffy,
 }
@@ -62,7 +64,7 @@ struct Args {
     count: Option<usize>,
 
     /// Interface used for communication with the Attest task.
-    #[clap(value_enum, long, default_value_t = Interface::Ipcc)]
+    #[clap(value_enum, long, default_value_t = Interface::Hiffy)]
     interface: Interface,
 
     /// Unit of time used for each sample
@@ -91,6 +93,7 @@ async fn main() -> Result<()> {
     let mut stdout = io::stdout().lock();
 
     let attest: Box<dyn Attest> = match args.interface {
+        #[cfg(feature = "ipcc")]
         Interface::Ipcc => Box::new(AttestIpcc::new()),
         Interface::Hiffy => Box::new(AttestHiffy::new(AttestTask::Rot)),
     };
