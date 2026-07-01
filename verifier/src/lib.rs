@@ -780,10 +780,7 @@ mod tests {
     // us.
     #[test]
     fn verify_cert_chain_second_root() {
-        let roots = vec![
-            get_bad_test_root(),
-            get_test_root(),
-        ];
+        let roots = vec![get_bad_test_root(), get_test_root()];
         let cert_chain = get_test_cert_chain();
 
         let anchor = verify_cert_chain(&cert_chain, Some(&roots)).unwrap();
@@ -797,10 +794,7 @@ mod tests {
         let out = PathBuf::from(env::var("OUT_DIR").unwrap());
         let device_id_file = out.join("device-id.cert.pem");
 
-        let roots = vec![
-            get_test_root(),
-            get_cert_from_file(&device_id_file),
-        ];
+        let roots = vec![get_test_root(), get_cert_from_file(&device_id_file)];
         let cert_chain = get_test_cert_chain();
 
         let res = verify_cert_chain(&cert_chain, Some(&roots));
