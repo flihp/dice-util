@@ -29,6 +29,7 @@ x509-cert = { workspace = true, default-features = true }
 
 [dev-dependencies]
 attest-data = { path = "../attest-data", features = ["std", "testing"] }
+pki-playground.workspace = true
 
 [features]
 testing = []

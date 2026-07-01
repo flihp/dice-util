@@ -36,6 +36,7 @@ log = { version = "0.4.33", features = ["std"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 p384 = { version = "0.13.1", default-features = false }
 pem-rfc7468 = { version = "0.7.0", default-features = false }
+pki-playground = { git = "https://github.com/flihp/pki-playground", rev = "8c98fc364adbcb02c23c9c96bb5e171e73e6c1b2" }
 rats-corim = { git = "https://github.com/oxidecomputer/rats-corim", rev = "f0d5d5168d3d31487a56df32c676b0c6240bcc6b" }
 ron = "0.8"
 rpassword = "7.5.4"
