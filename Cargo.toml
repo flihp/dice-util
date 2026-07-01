@@ -17,6 +17,7 @@ resolver = "2"
 anyhow = { version = "1.0.103", default-features = false }
 async-trait = "0.1.89"
 attest.path = "attest"
+camino = { version = "1.2.4", default-features = false }
 chrono = { version = "0.4.45", default-features=false }
 clap = { version = "4.6.1", features = ["derive", "env"] }
 clap-verbosity = "2.1.0"
@@ -36,7 +37,7 @@ log = { version = "0.4.33", features = ["std"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 p384 = { version = "0.13.1", default-features = false }
 pem-rfc7468 = { version = "0.7.0", default-features = false }
-pki-playground = { git = "https://github.com/flihp/pki-playground", rev = "8c98fc364adbcb02c23c9c96bb5e171e73e6c1b2" }
+pki-playground = { git = "https://github.com/flihp/pki-playground", rev = "9d61fd5e63d26d2e37351c38e7e1e6e8f1ec12b6" }
 rats-corim = { git = "https://github.com/oxidecomputer/rats-corim", rev = "f0d5d5168d3d31487a56df32c676b0c6240bcc6b" }
 ron = "0.8"
 rpassword = "7.5.4"
