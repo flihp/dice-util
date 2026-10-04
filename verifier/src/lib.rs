@@ -196,7 +196,17 @@ pub fn verify_cert_chain<'a>(
     pki_path: &'a PkiPath,
     roots: Option<&'a [Certificate]>,
 ) -> Result<&'a Certificate, PkiPathSignatureVerifierError> {
-    PkiPathSignatureVerifier::new(roots)?.verify(pki_path)
+    let verifier = PkiPathSignatureVerifier::new(roots)?;
+    match verifier.verify(pki_path) {
+        Ok(c) => Ok(c),
+        Err(e) => match e {
+            PkiPathSignatureVerifierError::SignatureType |
+            PkiPathSignatureVerifierError::VerifierFailed(CertVerifierError::Signature(_)) => {
+                todo!("reverse it");
+            }
+            e => Err(e),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -368,6 +378,25 @@ mod tests {
         out.push("helios-rot.certlist.pem");
         let cert_chain = get_cert_chain_from_file(&out);
 
+        let anchor = verify_cert_chain(
+            &cert_chain,
+            Some(std::slice::from_ref(&root_cert)),
+        )
+        .unwrap();
+
+        assert_eq!(anchor, &root_cert);
+    }
+
+    #[test]
+    fn helios_rot_amd_turin_reversed() {
+        let mut out = PathBuf::from(env::var("OUT_DIR").unwrap());
+        out.push("amd-root-ca-r4.cert.pem");
+        let root_cert = get_cert_from_file(&out);
+        out.pop();
+        out.push("helios-rot.certlist.pem");
+        let cert_chain = get_cert_chain_from_file(&out);
+
+        let cert_chain = cert_chain.into_iter().rev().collect();
         let anchor = verify_cert_chain(
             &cert_chain,
             Some(std::slice::from_ref(&root_cert)),
