@@ -9,6 +9,7 @@ members = [
     "dice-mfg",
     "dice-mfg-msgs",
     "oxide-rot",
+    "platform-rot",
     "yhsm-audit",
     "verifier-cli",
 ]

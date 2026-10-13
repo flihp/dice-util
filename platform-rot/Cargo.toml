@@ -1,0 +1,15 @@
+[package]
+name = "platform-rot"
+version = "0.1.0"
+edition = "2024"
+description = "a library crate implementing an interface to the Oxide Platform RoT"
+license = "MPL-2.0"
+
+[dependencies]
+async-trait.workspace = true
+helios-rot.workspace = true
+oxide-rot.path = "../oxide-rot"
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = [ "net", "rt", "time", "process" ] }
+x509-cert.workspace = true
