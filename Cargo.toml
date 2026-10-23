@@ -32,7 +32,11 @@ env_logger = { version = "0.11.11", default-features = false }
 flagset = "0.4.7"
 getrandom = "0.4.3"
 hex.version = "0.4"
-helios-rot = { git = "https://github.com/oxidecomputer/helios-rot", rev = "020eb50ba6ddc92cf059b35e989da7bd19769749" }
+
+# DO NOT COMMIT: these should point to the oxide repo, blocked on `HeliosRot`
+# impl for sled-agent backend
+helios-rot = { git = "https://github.com/flihp/helios-rot", branch = "sa-helios-rot" }
+
 hubpack = "0.1"
 humility-core = { git =  "https://github.com/oxidecomputer/humility" , rev = "9eb263bf2563dc2c5ae3a1678969774d1d4374b9" }
 humility-hiffy = { git =  "https://github.com/oxidecomputer/humility" , rev = "9eb263bf2563dc2c5ae3a1678969774d1d4374b9" }
@@ -56,8 +60,14 @@ serde_with = { version = "3.21.0", default-features = false }
 serialport = { git = "https://github.com/jgallagher/serialport-rs", branch = "illumos-support" }
 sha2 = "0.10.9"
 sha3 = { version = "0.10.8", default-features = false }
-sled-agent-client = { git = "https://github.com/oxidecomputer/omicron", rev = "5fd53a9c9ff2b0e47bfef3fe842b7516877b0162" }
-sled-agent-types-versions = { git = "https://github.com/oxidecomputer/omicron", rev = "5fd53a9c9ff2b0e47bfef3fe842b7516877b0162" }
+
+# DO NOT COMMIT: This dependency is for the sled-agent interface to the oxide
+# rot. pointing it at the sled-agent-client that knows about `HeliosRot` means
+# we have to account for the change in the types handled by the `/rot/oxide/`
+# endpoint
+sled-agent-client = { git = "https://github.com/flihp/omicron", branch = "sa-helios-rot" }
+sled-agent-types-versions = { git = "https://github.com/flihp/omicron", branch = "sa-helios-rot" }
+
 slog = { version = "2.8.2", default-features = false }
 slog-async = "2.8.0"
 slog-envlogger = "2.2.0"
