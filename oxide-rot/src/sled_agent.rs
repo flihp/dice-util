@@ -71,6 +71,7 @@ impl Attest for AttestSledAgent {
             SledAgentTypes::Attestation::Ed25519(d) => {
                 Attestation::Ed25519(d.0.into())
             }
+            SledAgentTypes::Attestation::P384(_) => todo!("this feels wrong"),
         };
         Ok(attestation)
     }
