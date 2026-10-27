@@ -2399,7 +2399,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "helios-rot"
 version = "0.1.0"
-source = "git+https://github.com/flihp/helios-rot?branch=sa-helios-rot#fa7dcbf196457b8f182f4318b9c9fbe7c79fcbc1"
+source = "git+https://github.com/flihp/helios-rot?branch=names-are-hard#2337869028026b13ad1b89feab2314fed5efe72f"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3984,7 +3984,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 [[package]]
 name = "os-rot"
 version = "0.1.0"
-source = "git+https://github.com/flihp/helios-rot?branch=sa-helios-rot#fa7dcbf196457b8f182f4318b9c9fbe7c79fcbc1"
+source = "git+https://github.com/flihp/helios-rot?branch=names-are-hard#2337869028026b13ad1b89feab2314fed5efe72f"
 dependencies = [
  "rustix 1.1.4",
  "thiserror 2.0.18",
